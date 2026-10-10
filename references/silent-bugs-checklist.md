@@ -20,8 +20,8 @@ Compiler không bắt được hai loại này. Vì vậy, bước kiểm tra "b
 Thứ tự nên làm:
 
 1. Lấy danh sách warning (mục 0).
-2. Quét theo từng nhóm từ mục 1 đến mục 14.
-3. Thử tay các kịch bản ở mục 15.
+2. Quét theo từng nhóm từ mục 1 đến mục 15.
+3. Thử tay các kịch bản ở mục 16.
 
 ---
 
@@ -335,7 +335,40 @@ Không crash, không sai dữ liệu, nhưng **lần đầu** mở một màn m�
 - **Đo phía server riêng** bằng `curl -w "dns=%{time_namelookup} tls=%{time_appconnect} ttfb=%{time_starttransfer}"` để tách chi phí kết nối, thời gian truy vấn và cache edge (xem header `cf-cache-status`, `age`).
 - Số đo trên simulator là **chặn dưới**. Máy thật dùng 4G và CPU yếu hơn sẽ chậm hơn nhiều, nên luôn thử lại trên máy thật với bản Release.
 
-## 15. Thử tay trước khi phát hành
+## 15. Máy nóng, tốn pin khi app đứng yên
+
+App chạy đúng, nhưng máy ấm lên dù user chỉ đọc mà không làm gì. Nguyên nhân gần như luôn là **có thứ vẽ lại màn hình hoặc đánh thức CPU liên tục**.
+
+**Thủ phạm hay gặp nhất: nền có animation lặp vô hạn nằm dưới lớp kính.** Một gradient nền dùng `withAnimation(...repeatForever...)` khiến cả màn hình được vẽ lại mỗi khung hình. Nếu phía trên có `.ultraThinMaterial` hoặc blur, GPU phải tính lại blur cho từng khung hình, trên mọi màn dùng nền đó, kể cả khi app đứng yên. Hãy để nền tĩnh. Nếu thật sự muốn có chuyển động thì giới hạn ở một màn, và tắt khi bật Low Power Mode hoặc Reduce Motion.
+
+Các nguồn khác cần quét:
+
+```sh
+grep -rn "repeatForever\|TimelineView\|CADisplayLink" --include='*.swift' .
+grep -rn "Timer\.\(scheduled\|publish\)\|Timer(" --include='*.swift' .
+grep -rn "while true\|while !Task.isCancelled" --include='*.swift' .
+grep -rn "setInterval\|requestAnimationFrame\|animation-iteration-count: *infinite" --include='*.swift' --include='*.html' --include='*.js' .
+```
+
+- Animation lặp vô hạn và timer chỉ nên tồn tại **trong màn đang cần**, và dừng ở `onDisappear`. Đừng đặt chúng ở view nền dùng chung cho nhiều màn.
+- `WKWebView` chạy animation lặp (`setInterval`, CSS `infinite`): mỗi web view là một nguồn tốn CPU. Một lưới nhiều web view cùng lặp sẽ nóng rất nhanh.
+- Vòng `while` có `Task.sleep` phải có điều kiện thoát và bị huỷ khi rời màn.
+- `onChange(of: x)` mà gán lại `x` phải hội tụ, tức gán xong thì điều kiện không còn đúng nữa. Nếu không sẽ lặp vô hạn. Có thể quét bằng script: tìm closure của `onChange(of: x)` có chứa phép gán `x = …`, rồi đọc từng chỗ.
+
+**Cách đo trên simulator:** để app đứng yên ở một màn, rồi đo CPU của app *và* của render server. Phần vẽ (blur, gradient) không tính vào CPU của app, mà nằm ở `backboardd`.
+
+```sh
+for i in 1 2 3 4 5; do
+  ps -Ao %cpu,comm | grep -E "backboardd|<App>" | grep -v grep
+  sleep 1
+done
+```
+
+Khi đứng yên, cả hai phải gần **0%**. Nếu `backboardd` cao (vài chục %) thì có thứ đang vẽ lại liên tục. Tắt từng nghi phạm (tạm thời, đánh dấu để gỡ lại) rồi đo lại để xác định chính xác.
+
+Trên máy thật, dùng Xcode → Debug Navigator → Energy Impact, hoặc Instruments (Time Profiler, Animation Hitches). Lưu ý: bản Debug có debugger gắn vào luôn nóng hơn bản Release.
+
+## 16. Thử tay trước khi phát hành
 
 Các kịch bản mà phần lớn lỗi ngầm chỉ lộ ra khi chạy thật:
 
@@ -355,3 +388,4 @@ Các kịch bản mà phần lớn lỗi ngầm chỉ lộ ra khi chạy thật:
 | Chạy bản **Release** trên máy thật | Nhánh `#if DEBUG`, test ad unit, URL localhost |
 | **Cài mới**, dùng 4G, mở màn chi tiết quan trọng lần đầu tiên | Lần đầu chậm (mục 14) |
 | Cài mới, mở app lần 1 và lần 2, không bấm gì lúc khởi động | Hộp xin quyền bị bỏ qua, modal chồng lên hộp thoại hệ thống (mục 13) |
+| Để app đứng yên vài phút ở các màn chính, sờ máy hoặc xem Energy Impact | Thứ gì đó vẽ lại hoặc chạy liên tục (mục 15) |

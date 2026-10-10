@@ -1,6 +1,6 @@
 ---
 name: binh-swift-ui-bonus-skill
-description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — silent bugs that build fine but crash or misbehave at runtime, launch-time timing traps (ATT/permission prompts, modals at launch), first-use latency (slow first sheet, DNS/TLS, first WKWebView, full-screen loaders), how to measure it on the simulator, and how to cache the APIs the app calls (client RAM/disk, URLCache, Cloudflare Cache API, KV/R2/Redis). Use whenever working in a SwiftUI or Xcode project — writing, porting or reusing views, adding services/networking/audio/ads/permissions, touching app launch, debugging "it's slow the first time" or "nothing happens when I tap", adding caching to a backend or TTS/AI/API call, or preparing a release — even if the user doesn't ask for a checklist.
+description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — silent bugs that build fine but crash or misbehave at runtime, launch-time timing traps (ATT/permission prompts, modals at launch), first-use latency (slow first sheet, DNS/TLS, first WKWebView, full-screen loaders), phone heating / battery drain while idle (repeatForever backgrounds under blur, timers, looping web views), how to measure it on the simulator, and how to cache the APIs the app calls (client RAM/disk, URLCache, Cloudflare Cache API, KV/R2/Redis). Use whenever working in a SwiftUI or Xcode project — writing, porting or reusing views, adding services/networking/audio/ads/permissions, touching app launch, debugging "it's slow the first time", "the phone gets hot" or "nothing happens when I tap", adding caching to a backend or TTS/AI/API call, or preparing a release — even if the user doesn't ask for a checklist.
 ---
 
 # SwiftUI bonus skill: silent bugs, first-use latency, API caching
@@ -11,6 +11,7 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 |---|---|
 | Porting/reusing a view, adding a service, touching launch flow, permissions, audio, concurrency, localization, or doing a pre-release pass | `references/silent-bugs-checklist.md` |
 | A screen is slow the first time, the app "feels laggy", or you need to measure timing on the simulator | `references/silent-bugs-checklist.md` §13–14 |
+| The phone gets hot or the battery drains, even when the app is idle | `references/silent-bugs-checklist.md` §15 |
 | Adding or reviewing caching for an API, backend, TTS/AI/third-party call, or media downloads | `references/api-caching-guide.md` |
 
 ## Always-on rules (apply without being asked)
@@ -29,6 +30,10 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 3. Warm WebKit once (hidden `WKWebView`, kept alive for the session).
 4. Prefetch likely next taps (debounced) with in-flight dedupe so the detail screen awaits the same `Task`.
 5. Uninstall the app before each measurement (`URLCache` fakes good numbers); treat simulator numbers as a lower bound and confirm on a device with a Release build.
+
+**Idle cost (heat, battery)**
+- Nothing may animate or tick forever on shared/background views: no `repeatForever` background gradient (it re-renders every `.ultraThinMaterial` blur on top of it each frame), no global timers or looping web views. Keep them inside the one screen that needs them and stop them in `onDisappear`.
+- Verify idle cost: with the app sitting still, both the app process *and* `backboardd` (render server) should be near 0% CPU on the simulator.
 
 **API caching**
 - Client first (RAM + disk with LRU, file I/O off the main actor), then the edge (Cloudflare Cache API, per data center, not on `*.workers.dev`, write with `ctx.waitUntil`), persistent stores only when measurements justify them.
