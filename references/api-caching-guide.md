@@ -1,73 +1,73 @@
-# Hướng dẫn cache cho API backend
+# Caching guide for backend APIs
 
-Tài liệu dùng chung cho mọi dự án có app gọi API (mobile, web) và backend chạy trên edge (Cloudflare Workers hoặc tương tự). Ví dụ code viết cho Swift và Cloudflare Workers, nhưng nguyên tắc áp dụng được cho nền tảng khác.
+A shared guide for any project where an app (mobile or web) calls an API and the backend runs on the edge (Cloudflare Workers or similar). The code examples are in Swift and Cloudflare Workers, but the principles apply to other platforms.
 
-Mục tiêu của cache:
+What caching is for:
 
-- **Nhanh hơn cho user**, nhất là lần đầu và khi mạng yếu.
-- **Giảm tải và giảm chi phí** cho phần đắt nhất: database, API bên thứ ba, model AI, dịch vụ TTS…
-- **Giảm rủi ro bị chặn** khi phụ thuộc vào dịch vụ bên ngoài có giới hạn tần suất hoặc không chính thức.
-- **Dùng được khi offline** (cache phía client).
+- **Faster for the user**, especially the first time and on a weak network.
+- **Less load and lower cost** for the most expensive part: the database, third-party APIs, AI models, TTS services…
+- **Less risk of being blocked** when you depend on an external service that is rate-limited or unofficial.
+- **Works offline** (client-side cache).
 
 ---
 
-## 1. Các lớp cache, từ gần user đến xa
+## 1. Cache layers, from nearest the user to farthest
 
-| Lớp | Ở đâu | Dùng chung giữa các user? | Tồn tại bao lâu | Hợp với |
+| Layer | Where | Shared between users? | How long it lives | Good for |
 |---|---|---|---|---|
-| RAM của app | Bộ nhớ, theo màn hình hoặc theo phiên | Không | Đến khi đóng màn hoặc app | Dữ liệu vừa dùng, tránh gọi lại khi quay lại màn |
-| Đĩa của app | `Caches/` (iOS), IndexedDB (web) | Không | Đến khi bị dọn | Dữ liệu lặp lại nhiều, file media (audio, ảnh, SVG), dùng offline |
-| HTTP cache của client | `URLCache`, cache của trình duyệt | Không | Theo `Cache-Control` | Response GET có header cache đúng |
-| CDN / cache edge | Data center gần user | Có, **theo từng data center** | Theo TTL, có thể bị xoá sớm | Response GET công khai, hoặc POST được đổi thành key GET (mục 4) |
-| Kho bền vững | KV, R2/S3, Redis | Có, toàn cầu hoặc một vùng | Đến khi bạn xoá | Kết quả đắt cần giữ lâu, dùng chung toàn cầu |
-| Nguồn gốc | Database, API ngoài | — | — | — |
+| App RAM | Memory, per screen or per session | No | Until the screen or app closes | Data just used; avoid refetching when returning to a screen |
+| App disk | `Caches/` (iOS), IndexedDB (web) | No | Until it's purged | Data used again and again, media files (audio, images, SVG), offline use |
+| Client HTTP cache | `URLCache`, the browser cache | No | Per `Cache-Control` | GET responses with the right cache headers |
+| CDN / edge cache | The data center near the user | Yes, **per data center** | Per TTL; may be evicted early | Public GET responses, or POSTs turned into a GET key (section 4) |
+| Persistent store | KV, R2/S3, Redis | Yes, global or one region | Until you delete it | Expensive results that must be kept long and shared globally |
+| Origin | Database, external API | — | — | — |
 
-Quy tắc chọn:
+How to choose:
 
-- **Bắt đầu từ client** (RAM + đĩa). Không tốn chi phí server và có hiệu quả ngay cho user hay dùng lại.
-- **Thêm cache edge** khi nhiều user hỏi cùng một thứ (nội dung từ điển, bài viết, audio của câu mẫu). Lớp này thường miễn phí.
-- **Chỉ thêm kho bền vững** khi đo thấy cache edge trượt nhiều mà nguồn gốc lại đắt hoặc rủi ro. Đây là lớp tốn công vận hành nhất (dung lượng, dọn dẹp, lạm dụng).
-- Luôn **đo trước và sau** (mục 8). Đừng thêm lớp cache vì "nghe có vẻ tốt".
+- **Start with the client** (RAM + disk). It costs nothing on the server and helps returning users right away.
+- **Add an edge cache** when many users ask for the same thing (dictionary content, articles, audio for sample sentences). This layer is usually free.
+- **Add a persistent store only** when measurements show the edge cache misses a lot and the origin is expensive or risky. It's the layer with the most operational work (storage, cleanup, abuse).
+- Always **measure before and after** (section 8). Don't add a cache layer because it "sounds good".
 
 ---
 
-## 2. Thiết kế cache key
+## 2. Designing the cache key
 
-Key sai là nguồn lỗi cache phổ biến nhất: trả nhầm dữ liệu cho request khác, hoặc không bao giờ trúng cache.
+A wrong key is the most common source of cache bugs: returning data for a different request, or never hitting the cache.
 
-- **Đưa vào key mọi tham số làm thay đổi kết quả**: ngôn ngữ, giọng đọc, tốc độ, định dạng output, phiên bản dữ liệu… Thiếu một tham số là trả nhầm.
-- **Chuẩn hoá trước khi tạo key**: trim khoảng trắng, gộp khoảng trắng liên tiếp, sắp xếp query param theo tên, chuẩn hoá Unicode nếu cần. Chuẩn hoá *đúng như cách backend xử lý input*, để hai request cho cùng kết quả thì có cùng key.
-- **Hash nội dung dài** (SHA-256 rồi lấy hex). Key gọn, không lộ nội dung, không vướng giới hạn độ dài URL.
-- **Thêm tiền tố phiên bản** (`v1/…`). Khi đổi định dạng output hoặc sửa lỗi dữ liệu, chỉ cần tăng phiên bản để bỏ toàn bộ cache cũ mà không phải xoá từng mục.
-- **Ở client, key theo nội dung chứ không theo màn hình.** Key kiểu `voice|text` cho phép cùng một câu ở hai màn dùng chung một file. Key kiểu `screenId|itemIndex` thì không.
+- **Put every parameter that changes the result into the key**: language, voice, speed, output format, data version… Missing one returns the wrong data.
+- **Normalize before building the key**: trim whitespace, collapse repeated whitespace, sort query parameters by name, normalize Unicode if needed. Normalize *exactly the way the backend processes the input*, so two requests that give the same result get the same key.
+- **Hash long content** (SHA-256, then hex). The key stays short, doesn't expose the content, and doesn't hit URL length limits.
+- **Add a version prefix** (`v1/…`). When the output format changes or a data bug is fixed, bump the version to drop the whole old cache without deleting entries one by one.
+- **On the client, key by content, not by screen.** A key like `voice|text` lets the same sentence on two screens share one file. A key like `screenId|itemIndex` doesn't.
 
 ```js
 const params = { text: normalize(text), voice, rate, pitch, format };
-const hash = await sha256Hex(JSON.stringify(params));   // thứ tự khoá cố định
+const hash = await sha256Hex(JSON.stringify(params));   // fixed key order
 const key = `v1/${hash}`;
 ```
 
 ---
 
-## 3. Không được cache gì
+## 3. What must never be cached
 
-- **Lỗi**: 4xx, 5xx, timeout, response rỗng hoặc không hợp lệ. Cache lỗi nghĩa là user bị lỗi suốt TTL. Chỉ ghi cache sau khi đã kiểm tra kết quả hợp lệ.
-- **Dữ liệu riêng của user** (cần đăng nhập, có `Authorization` hoặc cookie) ở cache dùng chung. Nếu bắt buộc phải cache thì đưa user id vào key, và chỉ dùng cache riêng.
-- **Nội dung nhạy cảm** do user tự nhập (tài liệu cá nhân, ảnh OCR…) trong kho bền vững dùng chung. Cache trên máy của chính user thì được. Nếu cần, cho client gửi kèm cờ kiểu `cache: false`.
-- **Response có `Set-Cookie`.** Phần lớn CDN sẽ không cache, hoặc tệ hơn là cache cookie của người này rồi trả cho người khác.
+- **Errors**: 4xx, 5xx, timeouts, empty or invalid responses. Caching an error means the user gets the error for the whole TTL. Only write to the cache after checking the result is valid.
+- **Private user data** (needs a login, has `Authorization` or a cookie) in a shared cache. If it really must be cached, put the user id in the key and use a private cache only.
+- **Sensitive content** the user entered (personal documents, OCR'd photos…) in a shared persistent store. Caching on the user's own device is fine. If needed, let the client send a flag like `cache: false`.
+- **Responses with `Set-Cookie`.** Most CDNs won't cache them or, worse, cache one person's cookie and serve it to someone else.
 
 ---
 
-## 4. Cache edge trên Cloudflare Workers (Cache API)
+## 4. Edge cache on Cloudflare Workers (Cache API)
 
-`caches.default` miễn phí, không cần binding, phản hồi rất nhanh (chỉ vài ms khi trúng). Những điều cần biết:
+`caches.default` is free, needs no binding, and is very fast (a few ms on a hit). What to know:
 
-- **Theo từng data center.** User ở hai nước khác nhau mỗi bên phải tạo lần đầu riêng. Dữ liệu có thể bị xoá trước TTL nếu ít dùng.
-- **Chỉ dùng key là request GET.** Với API dạng POST, hãy tạo một URL giả từ hash của body làm key.
-- **Không chạy trên domain `*.workers.dev`.** Phải gắn custom domain thì `cache.put` mới có tác dụng.
-- Response đưa vào cache cần có `Cache-Control: public, max-age=…`.
-- **Ghi cache bằng `ctx.waitUntil`**, để user không phải chờ bước ghi. Nhớ truyền `ctx` vào handler.
-- Thêm header **`X-Cache: HIT/MISS`** vào response để kiểm tra và đo tỉ lệ trúng.
+- **It's per data center.** Users in two different countries each pay for their own first request. Entries may be evicted before the TTL if they're rarely used.
+- **Keys must be GET requests.** For a POST API, build a synthetic URL from a hash of the body and use it as the key.
+- **It doesn't work on `*.workers.dev` domains.** Attach a custom domain, otherwise `cache.put` does nothing.
+- Responses put in the cache need `Cache-Control: public, max-age=…`.
+- **Write to the cache with `ctx.waitUntil`**, so the user doesn't wait for the write. Remember to pass `ctx` to the handler.
+- Add an **`X-Cache: HIT/MISS`** header to responses to verify and measure the hit rate.
 
 ```js
 const CACHE_VERSION = "v1";
@@ -102,39 +102,39 @@ async function sha256Hex(str) {
 }
 ```
 
-**Giữ nguyên định dạng response** khi thêm cache. Nhờ vậy các bản app đã phát hành hưởng lợi ngay mà không cần cập nhật.
+**Keep the response format unchanged** when adding a cache. That way app versions already in users' hands benefit immediately, without an update.
 
-Với API dạng **GET công khai**, có thể để CDN tự cache bằng header `Cache-Control` (cộng với Cache Rules trên dashboard nếu cần), và **sắp xếp query param cố định** ở client để các request giống nhau có cùng URL.
+For **public GET** APIs, you can let the CDN cache on its own with `Cache-Control` headers (plus Cache Rules in the dashboard if needed), and **sort query parameters in a fixed order** on the client so identical requests have identical URLs.
 
 ---
 
-## 5. Kho bền vững: khi nào cần, chọn gì
+## 5. Persistent stores: when you need one and which to pick
 
-Chỉ cần khi: kết quả **đắt** (gọi AI, TTS, API trả phí), được **nhiều user dùng lại**, và cache edge **trượt nhiều** vì user ở nhiều vùng hoặc dữ liệu ít người hỏi.
+Only when the result is **expensive** (AI, TTS, paid APIs), **reused by many users**, and the edge cache **misses a lot** because users are spread across regions or the data is rarely requested.
 
-| Lựa chọn | Hợp với | Lưu ý |
+| Option | Good for | Notes |
 |---|---|---|
-| Object storage (R2, S3) | File nhị phân (audio, ảnh), số lượng lớn | Rẻ; R2 không tính phí egress. Lifecycle rule xoá theo *tuổi file*, không theo lần truy cập cuối |
-| KV (Workers KV) | Đọc rất nhiều, ghi rất ít | Gói miễn phí giới hạn số lần ghi mỗi ngày rất thấp, **không hợp** với cache ghi liên tục. Ghi xong mất vài chục giây mới thấy ở mọi nơi |
-| Redis có REST API (ví dụ Upstash) | Key–value nhỏ, cần TTL theo từng key, đếm, rate limit | Gọi được từ Worker qua HTTP. Gói miễn phí giới hạn theo dung lượng và số lệnh |
-| Redis chỉ có TCP (ví dụ Redis Cloud gói miễn phí) | Backend chạy server truyền thống | Gói miễn phí rất nhỏ (cỡ vài chục MB). Từ edge function thì khó kết nối và chậm, vì database nằm ở một vùng |
+| Object storage (R2, S3) | Binary files (audio, images), in large numbers | Cheap; R2 has no egress fees. Lifecycle rules delete by *file age*, not by last access |
+| KV (Workers KV) | Very many reads, very few writes | The free tier allows very few writes per day, so it's **a poor fit** for a cache that writes constantly. A write takes tens of seconds to be visible everywhere |
+| Redis with a REST API (e.g. Upstash) | Small key–values, per-key TTL, counters, rate limits | Callable from a Worker over HTTP. The free tier is limited by storage and command count |
+| TCP-only Redis (e.g. Redis Cloud's free tier) | Backends running on traditional servers | The free tier is tiny (tens of MB). Hard and slow to reach from edge functions, because the database lives in one region |
 
-Giới hạn và giá của các gói miễn phí thay đổi thường xuyên. **Kiểm tra lại trên trang giá** trước khi quyết định.
+Free-tier limits and prices change often. **Check the pricing page again** before deciding.
 
-Khi dùng kho bền vững:
+When you use a persistent store:
 
-- Đặt **Cache API trước** kho bền vững: Cache API → kho → nguồn gốc.
-- Ước lượng dung lượng: kích thước trung bình một mục × số mục dự kiến. Ví dụ, audio MP3 48 kbps tốn khoảng 6 KB mỗi giây.
-- Có kế hoạch **dọn dẹp** (TTL, lifecycle) và **chặn lạm dụng** (mục 7).
+- Put the **Cache API in front of** the store: Cache API → store → origin.
+- Estimate the storage: average entry size × expected number of entries. For example, 48 kbps MP3 audio takes about 6 KB per second.
+- Have a plan for **cleanup** (TTL, lifecycle) and **abuse prevention** (section 7).
 
 ---
 
-## 6. Cache trên client
+## 6. Client-side cache
 
 ### RAM
 
-- Dictionary theo key, sống theo màn hoặc theo phiên. Rất nhanh nhưng mất khi đóng màn.
-- **Chống gọi trùng (in-flight dedupe):** lưu `Task` đang chạy theo key. Request thứ hai cho cùng key thì `await` chính `Task` đó.
+- A dictionary keyed by the cache key, living per screen or per session. Very fast, but gone when the screen closes.
+- **In-flight dedupe:** store the running `Task` by key. A second request for the same key `await`s that same `Task`.
 
 ```swift
 private var inFlight: [String: Task<Item, Error>] = [:]
@@ -152,67 +152,67 @@ func item(for key: String) async throws -> Item {
 }
 ```
 
-### Đĩa
+### Disk
 
-- iOS: dùng thư mục `Caches/`. Hệ thống có thể tự dọn khi máy thiếu dung lượng, nên **luôn coi dữ liệu ở đây là có thể mất**.
-- Tên file là hash của key (kèm tiền tố phiên bản), ghi với `.atomic`.
-- **Giới hạn dung lượng** và xoá file ít dùng nhất (LRU): cập nhật ngày sửa file mỗi lần đọc; khi vượt giới hạn thì xoá theo ngày cũ nhất, xuống dưới khoảng 75% giới hạn để không phải dọn liên tục. Chạy việc dọn tối đa một lần mỗi phiên.
-- **Đọc và ghi file ngoài main thread.** Với dự án đặt isolation mặc định là `MainActor`, đánh dấu type là `nonisolated` và hàm là `@concurrent`.
-- Ghi cache không được làm chậm việc hiển thị: trả dữ liệu cho UI trước, ghi file sau (`Task { await write(...) }`).
+- iOS: use the `Caches/` directory. The system may purge it when the device runs low on space, so **always treat data there as something that can disappear**.
+- The file name is a hash of the key (with the version prefix), written with `.atomic`.
+- **Cap the size** and delete the least recently used files (LRU): update the file's modification date on every read; when over the cap, delete by oldest date down to about 75% of the cap so cleanup doesn't run constantly. Run cleanup at most once per session.
+- **Read and write files off the main thread.** In projects whose default isolation is `MainActor`, mark the type `nonisolated` and the functions `@concurrent`.
+- Writing the cache must not delay what's shown: hand the data to the UI first, write the file afterwards (`Task { await write(...) }`).
 
 ### HTTP cache (`URLCache`)
 
-- Tôn trọng `Cache-Control` từ server. Đây là cách rẻ nhất nếu backend đặt header đúng.
-- Mặc định dung lượng khá nhỏ. Nếu dựa vào nó thì cấu hình `URLCache` lớn hơn cho session đó.
-- Response lớn so với dung lượng cache có thể không được lưu. Với file lớn, hãy tự cache trên đĩa.
-- Khi đo hiệu năng, nhớ rằng `URLCache` của lần chạy trước làm kết quả đẹp giả. Gỡ app trước khi đo.
+- Respect `Cache-Control` from the server. It's the cheapest option when the backend sets the headers right.
+- The default capacity is small. If you rely on it, configure a larger `URLCache` for that session.
+- Responses that are large relative to the cache capacity may not be stored. For large files, cache on disk yourself.
+- When measuring performance, remember that the previous run's `URLCache` makes the numbers look falsely good. Uninstall the app before measuring.
 
-### Tải trước (prefetch)
+### Prefetching
 
-- Tải trước những gì user nhiều khả năng sẽ bấm (ví dụ 3 kết quả tìm kiếm đầu), **có debounce** (300–500ms) vì danh sách đổi theo từng phím gõ.
-- Dùng chung cơ chế chống gọi trùng ở trên. Nếu không, màn chi tiết mở ra lúc request tải trước chưa xong sẽ gửi request thứ hai.
-- Bỏ qua khi dữ liệu đã có sẵn trên máy (gói offline, cache).
-
----
-
-## 7. An toàn và chống lạm dụng
-
-Cache dùng chung biến endpoint công khai thành một chỗ có thể bị làm đầy hoặc bị dùng ké.
-
-- **Giới hạn kích thước input ngay ở backend.** Không tin vào việc client đã tự cắt, vì ai cũng gọi thẳng endpoint được.
-- **Rate limit** theo IP hoặc theo user (rule trên CDN hoặc trong code).
-- Với kho bền vững: giới hạn dung lượng, có lifecycle, theo dõi tốc độ tăng.
-- Validate tham số theo danh sách cho phép (ngôn ngữ, giọng, định dạng) để kẻ xấu không tạo ra vô số key khác nhau.
+- Prefetch what the user will most likely tap next (e.g. the top 3 search results), **with a debounce** (300–500 ms) because the list changes with every keystroke.
+- Share the in-flight dedupe above. Otherwise a detail screen that opens while the prefetch is still running sends a second request.
+- Skip it when the data is already on the device (offline pack, cache).
 
 ---
 
-## 8. Đo lường
+## 7. Safety and abuse prevention
 
-Đo **trước khi** thêm cache và **sau khi** thêm, cùng một kịch bản.
+A shared cache turns a public endpoint into something that can be filled up or freeloaded on.
+
+- **Limit input size in the backend.** Don't rely on the client having trimmed it, because anyone can call the endpoint directly.
+- **Rate-limit** by IP or by user (a CDN rule or in code).
+- For persistent stores: cap the storage, set a lifecycle, watch the growth rate.
+- Validate parameters against an allowlist (languages, voices, formats) so an attacker can't generate endless distinct keys.
+
+---
+
+## 8. Measuring
+
+Measure **before** adding the cache and **after**, with the same scenario.
 
 ```sh
-# Tách chi phí kết nối, xử lý và cache
+# Separate connection, processing and cache costs
 curl -s -o /dev/null -D - \
   -w "dns=%{time_namelookup} tls=%{time_appconnect} ttfb=%{time_starttransfer} total=%{time_total}\n" \
   "https://api.example.com/lookup?term=..." | grep -iE "x-cache|cf-cache-status|age|dns="
 ```
 
-- Gọi 2 lần liên tiếp cùng một input: lần đầu phải là `MISS`, lần sau là `HIT`, và **nội dung phải giống hệt** (so bằng `cmp`).
-- Chạy thử local (`wrangler dev`) trước khi deploy. Nếu commit là tự deploy thì đây là bước kiểm tra cuối cùng.
-- Theo dõi tỉ lệ trúng cache qua log hoặc header. Tỉ lệ trúng thấp thường do key chưa chuẩn hoá, hoặc do dữ liệu vốn ít lặp lại (trường hợp này thì cache không đáng làm).
-- Phân biệt các chi phí: **kết nối** (DNS + TLS, chữa bằng làm nóng kết nối hoặc giữ kết nối), **truy vấn** (chữa bằng cache) và **hiển thị** (chữa phía client, xem mục "Lần đầu dùng bị chậm" trong `silent-bugs-checklist.md`).
+- Call twice in a row with the same input: the first must be `MISS`, the second `HIT`, and **the bodies must be identical** (compare with `cmp`).
+- Run it locally (`wrangler dev`) before deploying. If a commit deploys automatically, this is the last check.
+- Track the hit rate through logs or headers. A low hit rate usually means the key isn't normalized, or the data simply doesn't repeat much (in which case the cache isn't worth it).
+- Tell the costs apart: **connection** (DNS + TLS; fix by warming or keeping connections), **query** (fix with a cache) and **rendering** (fix on the client; see "First-use latency" in `silent-bugs-checklist.md`).
 
 ---
 
-## 9. Checklist khi thêm cache
+## 9. Checklist when adding a cache
 
-- [ ] Key có đủ mọi tham số ảnh hưởng kết quả, đã chuẩn hoá, có tiền tố phiên bản.
-- [ ] Chỉ cache kết quả thành công và hợp lệ.
-- [ ] Không cache dữ liệu riêng của user ở lớp dùng chung.
-- [ ] Ghi cache không chặn response (`waitUntil` ở server, ghi nền ở client).
-- [ ] Có giới hạn dung lượng và cách dọn dẹp.
-- [ ] Backend giới hạn kích thước input và có rate limit.
-- [ ] Định dạng response không đổi (client cũ vẫn chạy).
-- [ ] Có header HIT/MISS hoặc log để đo.
-- [ ] Đã thử MISS → HIT với nội dung giống hệt trước khi deploy.
-- [ ] Đã ghi vào README: TTL, cách xoá cache (tăng phiên bản), những gì cố ý không cache.
+- [ ] The key has every parameter that affects the result, is normalized, and has a version prefix.
+- [ ] Only successful, valid results are cached.
+- [ ] No private user data in shared layers.
+- [ ] Writing the cache doesn't block the response (`waitUntil` on the server, background write on the client).
+- [ ] There's a size cap and a cleanup method.
+- [ ] The backend limits input size and has rate limiting.
+- [ ] The response format is unchanged (old clients still work).
+- [ ] There's a HIT/MISS header or a log to measure with.
+- [ ] MISS → HIT with identical bodies was tested before deploying.
+- [ ] The README records the TTL, how to clear the cache (bump the version), and what is deliberately not cached.

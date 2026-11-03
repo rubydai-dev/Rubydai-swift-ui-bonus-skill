@@ -1,56 +1,56 @@
-# Checklist lỗi ngầm (silent bugs) cho dự án SwiftUI
+# Silent-bug checklist for SwiftUI projects
 
-Tài liệu này dùng được cho mọi dự án SwiftUI. Có thể copy sang dự án khác, rồi chỉ sửa phần ví dụ.
+This guide works for any SwiftUI project. Copy it into another project and change only the examples.
 
-"Lỗi ngầm" là lỗi **build vẫn qua, nhưng app crash hoặc chạy sai lúc runtime**. Có hai loại:
+A "silent bug" is one where **the build succeeds, but the app crashes or misbehaves at runtime**. There are two kinds:
 
-- **Crash:** app bị kill ngay khi người dùng đi vào đúng luồng đó.
-- **Sai lặng lẽ:** app không crash, nhưng nút bấm không có tác dụng, lỗi bị nuốt, dữ liệu gửi lên server sai, hoặc âm thanh bị tắt.
+- **Crash:** the app is killed as soon as the user walks into that exact flow.
+- **Quietly wrong:** the app doesn't crash, but a button does nothing, an error is swallowed, the wrong data is sent to the server, or the sound gets cut.
 
-Compiler không bắt được hai loại này. Vì vậy, bước kiểm tra "build OK" sau mỗi thay đổi là **chưa đủ**.
-
----
-
-## Khi nào chạy checklist
-
-- Sau khi port hoặc copy view từ dự án khác. Đây là lúc dễ gặp lỗi nhất, vì view mang theo "hợp đồng ngầm" với view cha cũ.
-- Khi dùng lại một component ở chỗ mới, ví dụ một renderer vốn chỉ nằm trong sheet A, nay được đặt vào màn B.
-- Trước khi phát hành.
-
-Thứ tự nên làm:
-
-1. Lấy danh sách warning (mục 0).
-2. Quét theo từng nhóm từ mục 1 đến mục 15.
-3. Thử tay các kịch bản ở mục 16.
+The compiler catches neither. So "build OK" after each change is **not enough**.
 
 ---
 
-## 0. Đọc warning của một lần build sạch
+## When to run the checklist
 
-Rất nhiều lỗi runtime vẫn có dấu hiệu dưới dạng **warning**, đặc biệt khi dự án ở Swift 5 mode nhưng bật `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. Khi đó, vi phạm isolation chỉ là warning.
+- After porting or copying a view from another project. This is when bugs are most likely, because the view carries "unwritten contracts" with its old parent.
+- When reusing a component somewhere new, e.g. a renderer that used to live only inside sheet A is now placed on screen B.
+- Before a release.
+
+Order of work:
+
+1. Get the list of warnings (section 0).
+2. Sweep each group from section 1 to section 15.
+3. Try the manual scenarios in section 16.
+
+---
+
+## 0. Read the warnings of a clean build
+
+Many runtime bugs still show up as **warnings**, especially when the project is in Swift 5 mode with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` turned on. Isolation violations are then only warnings.
 
 ```sh
-# touch để buộc compile lại toàn bộ, nếu không Xcode chỉ in warning của file vừa đổi
+# touch to force a full recompile; otherwise Xcode only prints warnings for files that just changed
 find "<App>" -name '*.swift' -exec touch {} +
 xcodebuild -workspace "<App>.xcworkspace" -scheme "<App>" \
   -destination 'generic/platform=iOS Simulator' build 2>&1 \
   | grep -E "\.swift:[0-9]+:[0-9]+: warning" | grep -v "/Pods/" | sort -u
 ```
 
-Cần đọc kỹ các warning sau:
+Read these warnings carefully:
 
-| Warning | Ý nghĩa |
+| Warning | Meaning |
 |---|---|
-| `main actor-isolated ... cannot be called from outside of the actor` | Code `@MainActor` đang chạy trên thread nền (thường trong `Task.detached`). |
-| `expression is 'async' but is not marked with 'await'` | Compiler tự chèn bước chuyển về main actor, nên `Task.detached` không còn tác dụng và main thread vẫn bị chặn. |
-| `capture of ... with non-Sendable type` | Có khả năng data race. |
-| `result of 'try?' is unused` | Lỗi bị nuốt. Cần xác định có cố ý hay không. |
+| `main actor-isolated ... cannot be called from outside of the actor` | `@MainActor` code is running on a background thread (usually inside `Task.detached`). |
+| `expression is 'async' but is not marked with 'await'` | The compiler inserts a hop back to the main actor, so `Task.detached` has no effect and the main thread is still blocked. |
+| `capture of ... with non-Sendable type` | A possible data race. |
+| `result of 'try?' is unused` | An error is swallowed. Decide whether it's deliberate. |
 
 ---
 
-## 1. Dependency lấy từ environment
+## 1. Dependencies from the environment
 
-**Crash:** `No ObservableObject of type X found` hoặc `No Observable object of type X found`.
+**Crash:** `No ObservableObject of type X found` or `No Observable object of type X found`.
 
 ```sh
 grep -rn "@EnvironmentObject" --include='*.swift' .
@@ -58,32 +58,32 @@ grep -rhoE "@Environment\([A-Z][A-Za-z]+\.self\)" --include='*.swift' . | sort |
 grep -rnE "\.environmentObject\(|\.environment\([a-zA-Z]" --include='*.swift' .
 ```
 
-- Với mỗi type, xác định nơi inject. Nếu inject ở root `App`, mọi view kể cả sheet và fullScreenCover đều nhận được. Nếu inject ở một view con, mọi nơi dùng lại component đó đều phải inject theo.
-- **Environment không truyền qua** `UIHostingController` do mình tự tạo, `ImageRenderer` và `UIViewControllerRepresentable` host SwiftUI. Nếu view được render ở những chỗ này, hãy truyền dữ liệu qua tham số.
-- **Cách sửa gốc:** với dependency không bắt buộc, không dùng `@EnvironmentObject`. Dùng environment value kiểu optional để khi quên inject thì chỉ mất tính năng, app không crash:
+- For each type, find where it's injected. If it's injected at the root `App`, every view including sheets and fullScreenCovers receives it. If it's injected in a child view, every place that reuses that component must inject it too.
+- **The environment does not pass through** a `UIHostingController` you create yourself, `ImageRenderer`, or a `UIViewControllerRepresentable` hosting SwiftUI. If a view is rendered in one of these, pass the data as parameters.
+- **The root fix:** for optional dependencies, don't use `@EnvironmentObject`. Use an optional environment value, so forgetting to inject only loses the feature instead of crashing:
 
   ```swift
   extension EnvironmentValues {
       @Entry var audioPlayer: AudioPlayerController?
   }
-  // view con
+  // child view
   @Environment(\.audioPlayer) private var controller
   var body: some View { if let controller { SpeakerButton(controller: controller) } }
-  // view cha
+  // parent view
   .environment(\.audioPlayer, player)
   ```
 
-## 2. Khoá quyền trong Info.plist
+## 2. Permission keys in Info.plist
 
-**Crash:** iOS kill app ngay khi gọi API cần quyền mà thiếu khoá `NS...UsageDescription`. Chỉ bị ở đúng lần đầu gọi API, nên rất dễ lọt.
+**Crash:** iOS kills the app the moment it calls an API that needs a permission and the `NS...UsageDescription` key is missing. It only happens on the very first call to that API, so it slips through easily.
 
-| API / hành động | Khoá cần có |
+| API / action | Required key |
 |---|---|
 | `UIImagePickerController` camera, `AVCaptureDevice` | `NSCameraUsageDescription` |
 | `AVAudioEngine`, `AVAudioRecorder`, `requestRecordPermission` | `NSMicrophoneUsageDescription` |
 | `SFSpeechRecognizer` | `NSSpeechRecognitionUsageDescription` |
-| `PHPhotoLibrary` đọc thư viện | `NSPhotoLibraryUsageDescription` (`PhotosPicker` không cần) |
-| **`UIActivityViewController` / `ShareLink` chia sẻ ảnh** (người dùng bấm "Save Image"), `UIImageWriteToSavedPhotosAlbum` | **`NSPhotoLibraryAddUsageDescription`** (hay bị quên nhất) |
+| `PHPhotoLibrary` reading the library | `NSPhotoLibraryUsageDescription` (`PhotosPicker` doesn't need it) |
+| **`UIActivityViewController` / `ShareLink` sharing an image** (the user taps "Save Image"), `UIImageWriteToSavedPhotosAlbum` | **`NSPhotoLibraryAddUsageDescription`** (the most often forgotten) |
 | `ATTrackingManager` | `NSUserTrackingUsageDescription` |
 | `CLLocationManager` | `NSLocationWhenInUseUsageDescription` |
 
@@ -92,27 +92,27 @@ grep -rnE "UIImagePickerController|AVCaptureDevice|AVAudioEngine|SFSpeechRecogni
 grep -o "NS[A-Za-z]*UsageDescription" *.xcodeproj/project.pbxproj */Info.plist 2>/dev/null | sort -u
 ```
 
-## 3. Các phép toán có thể trap
+## 3. Operations that can trap
 
 ```sh
 grep -rnE "try!|fatalError|preconditionFailure|as! " --include='*.swift' .
 grep -rnE "[A-Za-z0-9_\)\]]![^=]" --include='*.swift' . | grep -v '"'      # force unwrap
-grep -rn "uniqueKeysWithValues" --include='*.swift' .                    # key trùng thì crash
+grep -rn "uniqueKeysWithValues" --include='*.swift' .                    # crashes on duplicate keys
 grep -rnE "\.removeFirst\(|\.removeLast\(|\.first!|\.last!|randomElement\(\)!" --include='*.swift' .
 ```
 
-- **Index mảng:** `arr[i]` phải có guard `indices.contains(i)` hoặc `i < count`. Đặc biệt cẩn thận với index lưu trong `@State` khi dữ liệu nguồn thay đổi.
-- **Range:** `a..<b` và `a...b` crash khi `a > b`. `Slider(in: 0...x)` crash khi `x` là NaN. Lưu ý `max(NaN, 0.01)` trả về NaN.
-- **Int từ Double:** `Int(x)` crash khi `x` là NaN hoặc vô cực. Duration của audio, phép chia 0/0 và progress có thể ra NaN, nên kiểm tra `isFinite` trước.
-- **`abs(Int.min)`** tràn số. Không lấy `abs(hashValue) % n`.
-- **`Dictionary(uniqueKeysWithValues:)`** crash khi key trùng. Nếu dữ liệu lấy từ server, dùng `Dictionary(_:uniquingKeysWith:)`.
-- **Parser cho file người dùng nhập** (zip, epub, docx, binary): mọi phép `subdata` hoặc `data[i]` phải kiểm tra biên với `data.count`. File bị cắt hoặc hỏng là chuyện bình thường.
+- **Array indexes:** `arr[i]` needs a guard, `indices.contains(i)` or `i < count`. Be especially careful with indexes stored in `@State` when the source data changes.
+- **Ranges:** `a..<b` and `a...b` crash when `a > b`. `Slider(in: 0...x)` crashes when `x` is NaN. Note that `max(NaN, 0.01)` returns NaN.
+- **Int from Double:** `Int(x)` crashes when `x` is NaN or infinite. Audio durations, 0/0 divisions and progress values can be NaN, so check `isFinite` first.
+- **`abs(Int.min)`** overflows. Don't use `abs(hashValue) % n`.
+- **`Dictionary(uniqueKeysWithValues:)`** crashes on duplicate keys. For data from a server, use `Dictionary(_:uniquingKeysWith:)`.
+- **Parsers for user-supplied files** (zip, epub, docx, binary): every `subdata` or `data[i]` must be bounds-checked against `data.count`. Truncated or corrupt files are normal.
 
-## 4. `String(format:)` với chuỗi đã dịch
+## 4. `String(format:)` with translated strings
 
-**Crash (`EXC_BAD_ACCESS`)** khi bản dịch có specifier khác với tham số, ví dụ `%@` nhưng truyền `Int`, hoặc có 2 specifier mà chỉ truyền 1 tham số. Lỗi chỉ xuất hiện khi máy dùng đúng ngôn ngữ đó.
+**Crash (`EXC_BAD_ACCESS`)** when a translation has different specifiers from the arguments, e.g. `%@` but an `Int` is passed, or two specifiers with only one argument. It only shows when the device uses that exact language.
 
-Script: với mỗi key được dùng trong `String(format: strings.KEY, ...)`, so bộ specifier của **mọi** bản dịch với bản tiếng Anh.
+Script: for every key used in `String(format: strings.KEY, ...)`, compare the specifier set of **every** translation with the English one.
 
 ```python
 import re, glob, collections, subprocess
@@ -134,25 +134,25 @@ for k, v in res.items():
     if len(v) > 1: print("MISMATCH", k, v)
 ```
 
-Sau đó đối chiếu specifier của bản tiếng Anh với kiểu tham số ở chỗ gọi.
+Then compare the English specifiers with the argument types at the call site.
 
-## 5. ID trong `ForEach`
+## 5. IDs in `ForEach`
 
-`ForEach(xs, id: \.self)` với dữ liệu có phần tử trùng sẽ vẽ sai, thiếu dòng hoặc giữ nhầm state. Trong `List` hoặc lazy stack, nó có thể gây crash.
+`ForEach(xs, id: \.self)` with duplicate elements draws wrong, drops rows, or keeps the wrong state. Inside a `List` or a lazy stack, it can crash.
 
 ```sh
 grep -rnE "ForEach\([^)]*id: \\\\\.self" --include='*.swift' . | grep -vE "\.\.<|allCases|indices"
 ```
 
-- Với dữ liệu từ server hoặc người dùng (các đáp án, tag, danh sách con), dùng `ForEach(Array(xs.enumerated()), id: \.offset)`, hoặc lọc trùng nếu phần tử trùng vốn không có ý nghĩa (ví dụ các ký tự lặp lại trong một từ).
-- Với model `Identifiable` lấy từ truy vấn JOIN hoặc FTS, kiểm tra DB xem có trả về cùng một id nhiều lần không.
+- For data from a server or the user (answer choices, tags, sublists), use `ForEach(Array(xs.enumerated()), id: \.offset)`, or deduplicate if duplicates carry no meaning (e.g. repeated letters in a word).
+- For `Identifiable` models from JOIN or FTS queries, check whether the database returns the same id more than once.
 
-## 6. Hàm xử lý bị gọi lặp (double tap, bấm trong lúc đang await)
+## 6. Handlers called twice (double tap, tapping during an await)
 
-**Sai dữ liệu:** bấm nhanh 2 lần vào Continue/Submit thì nhảy qua một mục, hoặc bước "finalize" chạy 2 lần và gửi kết quả lên server 2 lần.
+**Wrong data:** tapping Continue/Submit twice quickly skips an item, or the "finalize" step runs twice and posts the result to the server twice.
 
-- Mọi hàm async được gọi từ nút bấm và có thay đổi state hoặc gọi mạng phải có cờ chặn (`guard !isSubmitting`). Cờ phải được bật **trước lần `await` đầu tiên**.
-- Hàm chấm hoặc chuyển câu nên nhận **id của mục được trả lời** và bỏ qua nếu id đó không còn là mục hiện tại:
+- Every async function called from a button that changes state or hits the network needs a guard flag (`guard !isSubmitting`). The flag must be set **before the first `await`**.
+- Functions that grade or advance should take **the id of the item being answered** and ignore the call if that id is no longer the current item:
 
   ```swift
   func grade(itemId: Item.ID, correct: Bool) async {
@@ -161,25 +161,25 @@ grep -rnE "ForEach\([^)]*id: \\\\\.self" --include='*.swift' . | grep -vE "\.\.<
   }
   ```
 
-## 7. Lỗi bị nuốt
+## 7. Swallowed errors
 
-- Controller có `@Published var errorMessage` nhưng view sở hữu nó không gắn `.toast(...)` hoặc `.alert(...)`. Khi đó người dùng bấm mà không thấy gì xảy ra.
+- A controller has `@Published var errorMessage`, but the view that owns it doesn't attach `.toast(...)` or `.alert(...)`. The user taps and nothing visible happens.
 
   ```sh
-  # các file tạo controller (đổi "Controller()" theo quy ước đặt tên của dự án) nhưng không đọc errorMessage
+  # files that create a controller (change "Controller()" to the project's naming convention) but never read errorMessage
   for f in $(grep -rl "Controller()" --include='*.swift' .); do
     grep -q errorMessage "$f" || echo "$f"; done
   ```
 
-- `catch` chỉ ghi `Logger` trong một luồng mà người dùng tin là đã lưu, ví dụ màn tổng kết hiện "xong" trong khi request thất bại. Cần báo lỗi lên UI.
-- `try?` trên các thao tác ghi dữ liệu.
-- `try rows.compactMap { try decode(...) }`: chỉ một dòng hỏng cũng làm hỏng cả danh sách. Cân nhắc bỏ qua riêng dòng hỏng và ghi log.
+- A `catch` that only writes to `Logger` in a flow the user believes was saved, e.g. a summary screen shows "done" while the request failed. Report the error in the UI.
+- `try?` on writes.
+- `try rows.compactMap { try decode(...) }`: one bad row breaks the whole list. Consider skipping just the bad row and logging it.
 
-- **Giá trị mặc định của property KHÔNG cứu được `Decodable`.** `var mastered: Int = 0` vẫn ném `keyNotFound`
-  khi JSON thiếu khoá đó (lỗi hiện ra là "Không thể đọc dữ liệu vì dữ liệu bị thiếu"). Chuyện này hay xảy ra
-  khi cùng một model được dùng cho nhiều endpoint mà mỗi endpoint trả về một tập khoá khác nhau — request
-  vẫn thành công trên server nhưng UI lại báo lỗi. Cách sửa: viết `init(from:)` và dùng `decodeIfPresent`
-  hoặc khai báo optional:
+- **A property's default value does NOT save `Decodable`.** `var mastered: Int = 0` still throws `keyNotFound`
+  when the JSON lacks that key (the error reads "The data couldn't be read because it is missing."). This often happens
+  when one model is used for several endpoints that each return a different set of keys — the request
+  succeeds on the server but the UI reports an error. The fix: write `init(from:)` and use `decodeIfPresent`,
+  or make the property optional:
 
   ```swift
   init(from decoder: Decoder) throws {
@@ -190,16 +190,16 @@ grep -rnE "ForEach\([^)]*id: \\\\\.self" --include='*.swift' . | grep -vE "\.\.<
   ```
 
   ```sh
-  # model Decodable có property không optional kèm giá trị mặc định
+  # Decodable models with non-optional properties that have default values
   grep -rn -B30 "= 0$\|= \[\]$\|= false$" Models/ | grep -E "struct .*Decodable|struct .*Codable"
   ```
 
-## 8. Vòng đời view
+## 8. View lifecycle
 
-- **Audio, timer, speech:** mọi view sở hữu player hoặc timer cần `.onDisappear { stop() }`. Nút X gọi `stop()` là chưa đủ, vì người dùng có thể vuốt back hoặc vuốt đóng sheet.
-- **`@State` hoặc `@StateObject` khởi tạo từ tham số** (`_x = State(initialValue: param)`) chỉ lấy giá trị ở lần đầu. Nếu view được tái sử dụng với tham số mới, nó sẽ hiện dữ liệu cũ. Dùng `.id(param)` hoặc `.onChange(of: param)` để reset.
-- Khi view con reset state trong `.onChange(of: id)`, body vẫn được render **một lần với dữ liệu mới và state cũ** trước khi onChange chạy. State dạng index trỏ vào dữ liệu mới có thể vượt biên.
-- **State không bao giờ được dùng:** script tìm `@State` được gán nhưng không có binding `$x` và không được đọc ở đâu, tức nút bấm không có tác dụng:
+- **Audio, timers, speech:** every view that owns a player or a timer needs `.onDisappear { stop() }`. Having the X button call `stop()` isn't enough, because the user can swipe back or swipe the sheet down.
+- **`@State` or `@StateObject` initialized from a parameter** (`_x = State(initialValue: param)`) only takes the value the first time. If the view is reused with a new parameter, it shows stale data. Use `.id(param)` or `.onChange(of: param)` to reset.
+- When a child view resets its state in `.onChange(of: id)`, the body still renders **once with the new data and the old state** before onChange runs. Index-like state pointing into the new data can go out of bounds.
+- **State that's never used:** a script that finds `@State` that is assigned but has no `$x` binding and is never read, i.e. a button that does nothing:
 
   ```python
   import re, glob
@@ -214,11 +214,11 @@ grep -rnE "ForEach\([^)]*id: \\\\\.self" --include='*.swift' . | grep -vE "\.\.<
           if binds == 0 and uses - assigns - binds <= 0: print(f, n)
   ```
 
-## 9. Âm thanh (`AVAudioSession` dùng chung toàn app)
+## 9. Audio (`AVAudioSession` is shared by the whole app)
 
-- Session **chỉ có một cho cả app**. Module nào đổi category (ví dụ `.record` để nhận giọng nói) sẽ ảnh hưởng mọi module khác. Mỗi player phải đặt lại category **ngay trước mỗi lần `play()`**, không chỉ một lần trong `init` của singleton.
-- `setActive(false)` **dừng mọi player đang chạy** trên session, kể cả nhạc nền của module khác. Chỉ tắt session khi chắc chắn không còn ai đang phát.
-- `AVAudioEngine.inputNode.installTap`: nếu `outputFormat(forBus: 0)` có `sampleRate == 0` hoặc `channelCount == 0` (không có mic, mic đang bận vì cuộc gọi), hàm sẽ ném **NSException** và app crash. Guard trước khi gọi, và `removeTap` nếu `engine.start()` thất bại.
+- There is **only one session for the whole app**. Any module that changes the category (e.g. `.record` for speech recognition) affects every other module. Each player must set the category again **right before every `play()`**, not just once in a singleton's `init`.
+- `setActive(false)` **stops every player running** on the session, including another module's background music. Only deactivate the session when you're sure nothing else is playing.
+- `AVAudioEngine.inputNode.installTap`: if `outputFormat(forBus: 0)` has `sampleRate == 0` or `channelCount == 0` (no mic, or the mic is busy with a call), it throws an **NSException** and the app crashes. Guard before calling, and `removeTap` if `engine.start()` fails.
 
 ```sh
 grep -rn "setCategory\|setActive\|installTap" --include='*.swift' .
@@ -226,26 +226,26 @@ grep -rn "setCategory\|setActive\|installTap" --include='*.swift' .
 
 ## 10. Concurrency
 
-- Khi bật `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, mọi type mặc định là `@MainActor`. Code chạy trong `Task.detached` hoặc `DispatchQueue.global` mà gọi vào các type đó là vi phạm isolation. Ở Swift 5 mode, compiler chỉ báo warning (xem mục 0).
-- Type thuần xử lý dữ liệu (parser, tokenizer, zip reader) mà cố ý chạy nền thì đánh dấu `nonisolated` ở mức type hoặc hàm.
-- Nhóm `LocalizedError` có `errorDescription` đọc chuỗi localized thuộc main actor: để type lỗi ở isolation mặc định, chỉ đánh dấu hàm ném lỗi là `nonisolated`.
-- Có thể thử runtime bằng biến môi trường `SWIFT_UNEXPECTED_EXECUTOR_LOG_LEVEL=2`: sai executor thì crash, `1` thì chỉ log. Bật thêm **Thread Sanitizer** và **Main Thread Checker** trong Scheme → Diagnostics.
+- With `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, every type is `@MainActor` by default. Code running in `Task.detached` or `DispatchQueue.global` that calls into those types violates isolation. In Swift 5 mode, the compiler only warns (see section 0).
+- Pure data-processing types (parsers, tokenizers, zip readers) meant to run in the background should be marked `nonisolated` at the type or function level.
+- `LocalizedError` types whose `errorDescription` reads main-actor localized strings: keep the error type at the default isolation and mark only the throwing functions `nonisolated`.
+- Check at runtime with the environment variable `SWIFT_UNEXPECTED_EXECUTOR_LOG_LEVEL=2`: the wrong executor crashes; `1` only logs. Also turn on **Thread Sanitizer** and **Main Thread Checker** in Scheme → Diagnostics.
 
-## 11. Điều hướng và trình bày bị bỏ qua không báo
+## 11. Navigation and presentation silently ignored
 
-- `NavigationStack` lồng trong một view đã được push, hoặc `navigationDestination` đặt ngoài stack hay bên trong `List`/lazy container: SwiftUI chỉ log rồi bỏ qua.
-- Mở sheet hoặc fullScreenCover trong khi một cái khác đang trình bày hoặc đang đóng: cái sau bị bỏ qua. Cần chờ khoảng 350 ms hoặc dùng `onDismiss`.
-- Đổi qua lại giữa hai `NavigationStack` (ví dụ nhánh đăng nhập và nhánh khách) có thể crash navbar của UIKit. Chỉ nên có một nhánh sở hữu stack.
+- A `NavigationStack` nested inside a view that was already pushed, or a `navigationDestination` placed outside the stack or inside a `List`/lazy container: SwiftUI only logs and ignores it.
+- Opening a sheet or fullScreenCover while another one is presenting or dismissing: the second one is ignored. Wait about 350 ms or use `onDismiss`.
+- Switching back and forth between two `NavigationStack`s (e.g. a signed-in branch and a guest branch) can crash UIKit's navbar. Only one branch should own the stack.
 
 ```sh
 grep -rn "NavigationStack\|navigationDestination" --include='*.swift' .
 ```
 
-## 12. Locale và ngôn ngữ
+## 12. Locale and language
 
-- `Locale.preferredLanguages` trả mã có script: `zh-Hant-TW`, `zh-Hans-CN`, `pt-BR`, `fil-PH`. So khớp theo tiền tố `"zh"` sẽ đưa người dùng tiếng Trung phồn thể sang giản thể. Cần xử lý `zh-Hant*` trước.
-- Khi thêm ngôn ngữ mới, kiểm tra cả số nhiều, tên ngôn ngữ (`Locale.localizedString(forIdentifier:)`) và specifier của format (mục 4).
-- Nếu app tự đổi ngôn ngữ trong app (không theo ngôn ngữ máy), mọi lần đổi nên đi qua **một hàm duy nhất** trong store giữ ngôn ngữ, và hàm đó gán giá trị **không có animation**:
+- `Locale.preferredLanguages` returns codes with scripts: `zh-Hant-TW`, `zh-Hans-CN`, `pt-BR`, `fil-PH`. Matching on the `"zh"` prefix sends Traditional Chinese users to Simplified. Handle `zh-Hant*` first.
+- When adding a language, check plurals, language names (`Locale.localizedString(forIdentifier:)`) and format specifiers (section 4).
+- If the app switches language in-app (independent of the device language), every change should go through **one function** in the store that holds the language, and that function assigns the value **without animation**:
 
   ```swift
   func apply(_ language: AppLanguage?) {
@@ -255,14 +255,14 @@ grep -rn "NavigationStack\|navigationDestination" --include='*.swift' .
   }
   ```
 
-  Đừng gán ngôn ngữ trong `withAnimation`, và đừng dựa vào `.animation(nil, value: languageCode)` ở view cha. View đọc store trực tiếp qua Observation (nhiều view nằm trong `NavigationStack` riêng) nên modifier ở cha không có tác dụng. Nếu lần đổi rơi vào một transaction có animation (khôi phục phiên lúc đang cuộn, đóng menu khi đăng xuất), chữ sẽ cross-fade giữa hai ngôn ngữ.
-- Một bản sao dạng `static var currentCode` của ngôn ngữ (cho code không truy cập được environment) **không được observe**. Chỉ dùng nó cho lỗi, service và accessibility label; trong `body` hãy đọc ngôn ngữ từ store qua environment để view cập nhật khi đổi ngôn ngữ.
+  Don't assign the language inside `withAnimation`, and don't rely on `.animation(nil, value: languageCode)` on a parent view. Views read the store directly through Observation (many live in their own `NavigationStack`), so a modifier on the parent has no effect. If the change lands in an animated transaction (restoring a session while scrolling, closing a menu on sign-out), text cross-fades between the two languages.
+- A `static var currentCode` copy of the language (for code that can't reach the environment) is **not observed**. Use it only for errors, services and accessibility labels; in `body`, read the language from the store through the environment so views update when it changes.
 
-## 13. Thời điểm lúc mở app
+## 13. Timing at app launch
 
-Các bước chạy lúc khởi động thường **ngầm phụ thuộc vào thời gian** của nhau. Bỏ hoặc đổi thứ tự một bước có thể làm bước sau hỏng lặng lẽ.
+Launch steps often **silently depend on each other's timing**. Removing or reordering one step can quietly break a later one.
 
-- **Hộp xin quyền của hệ thống bị bỏ qua khi app chưa active.** Ví dụ, `ATTrackingManager.requestTrackingAuthorization` gọi lúc app chưa `.active` sẽ trả về ngay mà không hiện gì. Trước đó code có thể chạy đúng chỉ vì một bước khác (một request mạng, một form đồng ý) vô tình làm trễ đủ lâu. Khi bỏ bước đó thì hộp xin quyền biến mất. Hãy chờ app active một cách tường minh:
+- **System permission prompts are ignored while the app isn't active.** For example, `ATTrackingManager.requestTrackingAuthorization` called before the app is `.active` returns immediately without showing anything. The code may have worked before only because another step (a network request, a consent form) happened to add enough delay. Remove that step and the prompt disappears. Wait for the app to become active explicitly:
 
   ```swift
   if UIApplication.shared.applicationState != .active {
@@ -270,39 +270,39 @@ Các bước chạy lúc khởi động thường **ngầm phụ thuộc vào th
   }
   ```
 
-- **Modal của app tranh chỗ với hộp thoại hệ thống.** Đừng tự mở sheet hay modal khi các bước "hỏi user" lúc khởi động (form đồng ý, ATT, thông báo) chưa xong. Hãy chờ một cờ "luồng khởi động đã xong", và cả trạng thái phiên đăng nhập nếu nội dung modal phụ thuộc vào nó (ví dụ ngôn ngữ của tài khoản).
-- **Đừng hỏi user ở lần mở app đầu tiên** nếu lúc đó đã có hộp thoại khác. Nếu modal có nút "Để sau" thì cũng phải tính trường hợp user vuốt đóng (ví dụ bắt đầu thời gian chờ ngay khi modal hiện ra).
-- Khi thử trên simulator, nếu kill app trong lúc hộp thoại hệ thống đang mở thì hộp đó có thể **còn sót lại** ở lần mở sau. Hãy đọc log để biết lần mở này có thật sự gọi API xin quyền hay không, đừng chỉ nhìn ảnh chụp.
+- **The app's own modals compete with system dialogs.** Don't open your own sheet or modal while the launch-time "ask the user" steps (consent form, ATT, notifications) haven't finished. Wait for a "launch flow finished" flag, and for the session state too if the modal's content depends on it (e.g. the account's language).
+- **Don't ask the user anything on the very first launch** if another dialog is already showing. If the modal has a "Later" button, also handle the user swiping it away (e.g. start the cooldown as soon as the modal appears).
+- On the simulator, killing the app while a system dialog is open can leave that dialog **lingering** on the next launch. Read the log to know whether this launch really called the permission API; don't rely on screenshots alone.
 
-## 14. Lần đầu dùng bị chậm (first-use latency)
+## 14. First-use latency
 
-Không crash, không sai dữ liệu, nhưng **lần đầu** mở một màn mất 2–4 giây, còn các lần sau thì nhanh. Lúc dev ít ai thấy, vì máy dev đã có sẵn cache và kết nối. Với app tra cứu, user chỉ cần gặp một lần là đủ để xoá app.
+No crash, no wrong data, but the **first** time a screen opens it takes 2–4 seconds, while later times are fast. Few people notice during development, because the dev device already has warm caches and connections. For a lookup app, one such experience is enough for a user to delete it.
 
-**Nguyên nhân hay gặp, thường cộng dồn với nhau:**
+**Common causes, which usually add up:**
 
-| Nguyên nhân | Dấu hiệu |
+| Cause | Sign |
 |---|---|
-| Kết nối đầu tiên tới mỗi host: DNS + TLS (0,3–1s mỗi host trên 4G) | Request đầu tiên chậm, các request sau nhanh |
-| Database ở backend nằm ở một vùng cố định (dù Worker hay edge function không có cold start) | Mục chưa có trong cache edge chậm hơn mục đã có |
-| `WKWebView` đầu tiên phải khởi động tiến trình WebKit (vài trăm ms trên main thread) | Màn có web view (SVG, HTML, banner quảng cáo) giật ở lần đầu |
-| SwiftUI dựng layout lần đầu và Swift runtime tra conformance lần đầu (nặng hơn hẳn ở Debug) | Main thread đứng vài trăm ms khi mở sheet lần đầu |
-| **Loading toàn màn hình che dữ liệu đã có sẵn** | User nhìn màn trống, dù app đã có một phiên bản dữ liệu dùng được (ví dụ bản gốc chưa dịch) |
+| The first connection to each host: DNS + TLS (0.3–1 s per host on 4G) | The first request is slow, later ones are fast |
+| The backend database lives in one fixed region (even if the Worker or edge function has no cold start) | Items not yet in the edge cache are slower than cached ones |
+| The first `WKWebView` has to start the WebKit process (a few hundred ms on the main thread) | Screens with a web view (SVG, HTML, ad banners) stutter the first time |
+| SwiftUI's first layout and the Swift runtime's first conformance lookups (much heavier in Debug) | The main thread stalls for a few hundred ms when a sheet opens the first time |
+| **A full-screen loader covering data you already have** | The user stares at an empty screen even though the app has a usable version of the data (e.g. the untranslated original) |
 
-**Cách sửa, theo thứ tự hiệu quả:**
+**Fixes, in order of impact:**
 
-1. **Không che dữ liệu đã có.** Hiện ngay dữ liệu đang có (bản gốc, bản cache cũ), chỉ báo đang tải bằng một chỉ báo nhỏ không chặn thao tác, khi dữ liệu mới về thì thay vào. Đây là thay đổi lớn nhất về cảm giác.
-2. **Làm nóng kết nối** ngay sau khi app mở (chờ 1–2 giây để màn đầu tiên ổn định): gửi một request `HEAD` nhẹ tới từng host mà màn quan trọng sẽ gọi.
-   - **Connection pool là của từng `URLSession`.** Làm nóng qua `URLSession.shared` không giúp gì cho một service có `URLSession` riêng. Phải làm nóng qua đúng session mà service đó dùng.
-3. **Làm nóng WebKit:** tạo sẵn một `WKWebView` ẩn (`loadHTMLString("")`) và **giữ nó suốt phiên**, để tiến trình web content luôn chạy sẵn.
-4. **Tải trước** dữ liệu cho những gì user có khả năng bấm tiếp (ví dụ vài kết quả tìm kiếm đầu tiên), có debounce vì danh sách đổi theo từng phím gõ.
-   - Thêm **chống gọi trùng** (in-flight dedupe): lưu `Task` đang chạy theo key. Nếu màn chi tiết mở ra khi request tải trước còn đang chạy thì `await` chính `Task` đó, không gửi request thứ hai.
-   - Cho `Task` tải trước chạy độc lập (unstructured), để khi debounce huỷ thì kết quả vẫn được ghi vào cache.
-   - Nếu một response trả về nhiều mục (ví dụ mọi mục cùng một từ khoá) thì cache hết các mục đó.
-5. **Dữ liệu offline** (gói tải về, database đóng gói sẵn) giúp bỏ hẳn bước gọi mạng. Hãy chủ động mời user tải gói thay vì chỉ để một icon nhỏ.
+1. **Don't cover data you already have.** Show what you have right away (the original, an older cached copy), signal loading with a small non-blocking indicator, and swap in the new data when it arrives. This is the biggest change in how the app feels.
+2. **Warm up connections** right after launch (wait 1–2 seconds for the first screen to settle): send a light `HEAD` request to every host the key screens will call.
+   - **The connection pool belongs to each `URLSession`.** Warming through `URLSession.shared` does nothing for a service with its own `URLSession`. Warm through the exact session that service uses.
+3. **Warm up WebKit:** create a hidden `WKWebView` (`loadHTMLString("")`) and **keep it alive for the whole session**, so the web content process is always running.
+4. **Prefetch** data for what the user is likely to tap next (e.g. the first few search results), with a debounce because the list changes with every keystroke.
+   - Add **in-flight dedupe**: store the running `Task` by key. If the detail screen opens while the prefetch is still running, `await` that same `Task` instead of sending a second request.
+   - Run the prefetch `Task` unstructured, so the result still lands in the cache when the debounce cancels it.
+   - If one response returns several items (e.g. every entry for a search term), cache all of them.
+5. **Offline data** (downloadable packs, a bundled database) removes the network step entirely. Actively invite users to download the pack instead of leaving it behind a small icon.
 
-**Cách đo** (đo trước khi sửa, đừng đoán):
+**How to measure** (measure before fixing; don't guess):
 
-- **Đánh dấu thời gian** bằng `os_log` tại các điểm: lúc bấm, `onAppear`, bắt đầu/kết thúc request, bắt đầu/kết thúc tạo web view. Thêm một **heartbeat main thread** (timer 20ms, log khi khoảng cách giữa hai lần chạy > 80ms) để bắt chỗ main thread bị đứng. Đặt một dấu chung (ví dụ `// PERF-TMP`) để gỡ sạch sau khi đo.
+- **Timestamp** with `os_log` at: the tap, `onAppear`, request start/end, web view creation start/end. Add a **main-thread heartbeat** (a 20 ms timer that logs when the gap between two ticks exceeds 80 ms) to catch main-thread stalls. Use a shared marker (e.g. `// PERF-TMP`) so everything can be removed cleanly after measuring.
 
   ```swift
   nonisolated enum PerfTmp {
@@ -314,8 +314,8 @@ Không crash, không sai dữ liệu, nhưng **lần đầu** mở một màn m�
   }
   ```
 
-- **Tự mở màn cần đo** bằng một launch argument chỉ dùng khi đo (ví dụ `-PerfDetail`): chờ vài giây sau khi mở app, rồi mở màn đó lần 1, đóng lại, mở lần 2 với **dữ liệu khác** để tách chi phí "lần đầu" khỏi chi phí "mỗi lần".
-- **Gỡ app trước mỗi lần đo**, vì `URLCache` của lần chạy trước làm kết quả đẹp giả.
+- **Open the screen being measured automatically** with a measurement-only launch argument (e.g. `-PerfDetail`): wait a few seconds after launch, open the screen once, close it, then open it a second time with **different data**, to separate the "first time" cost from the "every time" cost.
+- **Uninstall the app before every measurement**, because the previous run's `URLCache` makes the numbers look falsely good.
 
   ```sh
   xcrun simctl uninstall $DEV $BUNDLE && xcrun simctl install $DEV "$APP"
@@ -323,7 +323,7 @@ Không crash, không sai dữ liệu, nhưng **lần đầu** mở một màn m�
   xcrun simctl spawn $DEV log show --last 30s --predicate 'subsystem == "perf.tmp"' --style compact
   ```
 
-- **Time Profiler cho simulator:** attach bằng pid phía Mac *và* UDID của simulator, rồi export ra XML để đọc các frame nặng trên main thread.
+- **Time Profiler on the simulator:** attach with the Mac-side pid *and* the simulator's UDID, then export to XML to read the heavy frames on the main thread.
 
   ```sh
   PID=$(pgrep -f "<App>.app/<App>" | head -1)
@@ -332,16 +332,16 @@ Không crash, không sai dữ liệu, nhưng **lần đầu** mở một màn m�
     --xpath '/trace-toc/run[@number="1"]/data/table[@schema="time-profile"]' --output tp.xml
   ```
 
-- **Đo phía server riêng** bằng `curl -w "dns=%{time_namelookup} tls=%{time_appconnect} ttfb=%{time_starttransfer}"` để tách chi phí kết nối, thời gian truy vấn và cache edge (xem header `cf-cache-status`, `age`).
-- Số đo trên simulator là **chặn dưới**. Máy thật dùng 4G và CPU yếu hơn sẽ chậm hơn nhiều, nên luôn thử lại trên máy thật với bản Release.
+- **Measure the server separately** with `curl -w "dns=%{time_namelookup} tls=%{time_appconnect} ttfb=%{time_starttransfer}"` to separate connection cost, query time and the edge cache (look at the `cf-cache-status` and `age` headers).
+- Simulator numbers are a **lower bound**. A real device on 4G with a slower CPU is much slower, so always try again on a device with a Release build.
 
-## 15. Máy nóng, tốn pin khi app đứng yên
+## 15. The phone gets hot and the battery drains while the app sits idle
 
-App chạy đúng, nhưng máy ấm lên dù user chỉ đọc mà không làm gì. Nguyên nhân gần như luôn là **có thứ vẽ lại màn hình hoặc đánh thức CPU liên tục**.
+The app works, but the phone warms up even though the user is only reading. The cause is almost always **something redrawing the screen or waking the CPU constantly**.
 
-**Thủ phạm hay gặp nhất: nền có animation lặp vô hạn nằm dưới lớp kính.** Một gradient nền dùng `withAnimation(...repeatForever...)` khiến cả màn hình được vẽ lại mỗi khung hình. Nếu phía trên có `.ultraThinMaterial` hoặc blur, GPU phải tính lại blur cho từng khung hình, trên mọi màn dùng nền đó, kể cả khi app đứng yên. Hãy để nền tĩnh. Nếu thật sự muốn có chuyển động thì giới hạn ở một màn, và tắt khi bật Low Power Mode hoặc Reduce Motion.
+**The most common culprit: an endlessly animating background under glass.** A background gradient using `withAnimation(...repeatForever...)` redraws the whole screen every frame. If there's `.ultraThinMaterial` or a blur on top, the GPU recomputes the blur every frame, on every screen that uses that background, even while the app is idle. Keep the background static. If you really want motion, limit it to one screen and turn it off in Low Power Mode or with Reduce Motion.
 
-Các nguồn khác cần quét:
+Other sources to sweep:
 
 ```sh
 grep -rn "repeatForever\|TimelineView\|CADisplayLink" --include='*.swift' .
@@ -350,12 +350,12 @@ grep -rn "while true\|while !Task.isCancelled" --include='*.swift' .
 grep -rn "setInterval\|requestAnimationFrame\|animation-iteration-count: *infinite" --include='*.swift' --include='*.html' --include='*.js' .
 ```
 
-- Animation lặp vô hạn và timer chỉ nên tồn tại **trong màn đang cần**, và dừng ở `onDisappear`. Đừng đặt chúng ở view nền dùng chung cho nhiều màn.
-- `WKWebView` chạy animation lặp (`setInterval`, CSS `infinite`): mỗi web view là một nguồn tốn CPU. Một lưới nhiều web view cùng lặp sẽ nóng rất nhanh.
-- Vòng `while` có `Task.sleep` phải có điều kiện thoát và bị huỷ khi rời màn.
-- `onChange(of: x)` mà gán lại `x` phải hội tụ, tức gán xong thì điều kiện không còn đúng nữa. Nếu không sẽ lặp vô hạn. Có thể quét bằng script: tìm closure của `onChange(of: x)` có chứa phép gán `x = …`, rồi đọc từng chỗ.
+- Endless animations and timers should exist **only in the screen that needs them**, and stop in `onDisappear`. Don't put them on a background view shared by many screens.
+- A `WKWebView` running a looping animation (`setInterval`, CSS `infinite`): each web view is its own CPU cost. A grid of many looping web views heats up very quickly.
+- A `while` loop with `Task.sleep` needs an exit condition and must be cancelled when leaving the screen.
+- An `onChange(of: x)` that reassigns `x` must converge, i.e. after the assignment the condition no longer holds. Otherwise it loops forever. A script can sweep for it: find `onChange(of: x)` closures that contain an assignment `x = …`, then read each one.
 
-**Cách đo trên simulator:** để app đứng yên ở một màn, rồi đo CPU của app *và* của render server. Phần vẽ (blur, gradient) không tính vào CPU của app, mà nằm ở `backboardd`.
+**Measuring on the simulator:** leave the app idle on a screen, then measure the CPU of the app *and* of the render server. Drawing (blur, gradients) isn't counted in the app's CPU; it shows up in `backboardd`.
 
 ```sh
 for i in 1 2 3 4 5; do
@@ -364,28 +364,28 @@ for i in 1 2 3 4 5; do
 done
 ```
 
-Khi đứng yên, cả hai phải gần **0%**. Nếu `backboardd` cao (vài chục %) thì có thứ đang vẽ lại liên tục. Tắt từng nghi phạm (tạm thời, đánh dấu để gỡ lại) rồi đo lại để xác định chính xác.
+When idle, both must be close to **0%**. If `backboardd` is high (tens of percent), something is redrawing constantly. Disable suspects one at a time (temporarily, marked so they can be restored) and measure again to pinpoint it.
 
-Trên máy thật, dùng Xcode → Debug Navigator → Energy Impact, hoặc Instruments (Time Profiler, Animation Hitches). Lưu ý: bản Debug có debugger gắn vào luôn nóng hơn bản Release.
+On a device, use Xcode → Debug Navigator → Energy Impact, or Instruments (Time Profiler, Animation Hitches). Note: a Debug build with the debugger attached always runs hotter than a Release build.
 
-## 16. Thử tay trước khi phát hành
+## 16. Manual tests before a release
 
-Các kịch bản mà phần lớn lỗi ngầm chỉ lộ ra khi chạy thật:
+Scenarios where most silent bugs only show up when actually running:
 
-| Kịch bản | Bắt được |
+| Scenario | Catches |
 |---|---|
-| Đi mọi lối vào của một tính năng, không chỉ lối chính (ví dụ một màn luyện tập mở từ Home, từ danh sách yêu thích và từ một màn khác) | Thiếu inject environment |
-| Tắt mạng, hoặc bị giới hạn tần suất (429), rồi bấm mọi nút gọi mạng | Lỗi bị nuốt |
-| Từ chối từng quyền, rồi dùng tính năng đó | Luồng xử lý khi bị từ chối quyền |
-| Share ảnh → Save Image | Thiếu `NSPhotoLibraryAddUsageDescription` |
-| Bấm nhanh 2 lần mọi nút Submit, Continue, Buy | Hàm bị gọi lặp |
-| Vuốt đóng sheet hoặc vuốt back trong lúc audio đang phát | Thiếu stop trong `onDisappear` |
-| Chuyển giữa các module có âm thanh (ghi âm → phát) | Category của session |
-| Đổi ngôn ngữ máy sang từng ngôn ngữ hỗ trợ, nhất là zh-Hant | Format, locale |
-| Máy để English, đăng nhập tài khoản có ngôn ngữ khác, tắt hẳn app rồi mở lại và cuộn ngay | Chữ cross-fade giữa hai ngôn ngữ khi khôi phục phiên |
-| Nhập file hỏng hoặc rỗng (pdf, epub, docx, zip đổi đuôi) | Parser |
-| Gọi điện hoặc mở app khác đang giữ mic rồi dùng tính năng thu âm | `installTap` |
-| Chạy bản **Release** trên máy thật | Nhánh `#if DEBUG`, test ad unit, URL localhost |
-| **Cài mới**, dùng 4G, mở màn chi tiết quan trọng lần đầu tiên | Lần đầu chậm (mục 14) |
-| Cài mới, mở app lần 1 và lần 2, không bấm gì lúc khởi động | Hộp xin quyền bị bỏ qua, modal chồng lên hộp thoại hệ thống (mục 13) |
-| Để app đứng yên vài phút ở các màn chính, sờ máy hoặc xem Energy Impact | Thứ gì đó vẽ lại hoặc chạy liên tục (mục 15) |
+| Use every entry point to a feature, not just the main one (e.g. a practice screen opened from Home, from the favorites list and from another screen) | Missing environment injection |
+| Turn off the network, or get rate-limited (429), then tap every button that hits the network | Swallowed errors |
+| Deny each permission, then use that feature | The permission-denied path |
+| Share an image → Save Image | Missing `NSPhotoLibraryAddUsageDescription` |
+| Double-tap every Submit, Continue and Buy button quickly | Handlers called twice |
+| Swipe a sheet down or swipe back while audio is playing | Missing stop in `onDisappear` |
+| Switch between modules that use audio (record → play) | The session category |
+| Switch the device language to each supported language, especially zh-Hant | Formats, locale |
+| Device in English, sign in to an account with another language, force-quit the app, reopen and scroll immediately | Text cross-fading between two languages when the session restores |
+| Import a corrupt or empty file (pdf, epub, docx, a renamed zip) | Parsers |
+| Be on a call, or have another app hold the mic, then use the recording feature | `installTap` |
+| Run a **Release** build on a real device | `#if DEBUG` branches, test ad units, localhost URLs |
+| **Fresh install**, on 4G, open a key detail screen for the first time | First-use latency (section 14) |
+| Fresh install, launch the app a first and a second time without tapping anything during launch | Ignored permission prompts, modals on top of system dialogs (section 13) |
+| Leave the app idle for a few minutes on the main screens; feel the phone or watch Energy Impact | Something redrawing or running constantly (section 15) |

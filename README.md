@@ -1,51 +1,69 @@
-# binh-swift-ui-bonus-skill
+# Rubydai SwiftUI bonus skill
 
-Skill cho [Claude Code](https://claude.com/claude-code), dùng cho mọi dự án SwiftUI / iOS. Nó gom lại các bài học "build OK nhưng chạy vẫn hỏng" để Claude tự áp dụng khi làm việc trong dự án SwiftUI, không cần nhắc.
+A [Claude Code](https://claude.com/claude-code) skill for any SwiftUI / iOS project. It collects the "builds fine, still breaks at runtime" lessons so Claude applies them automatically when it works in a SwiftUI project, without being asked.
 
-## Nội dung
+The skill installs as `rubydai-swift-ui-bonus-skill`.
 
-| File | Nội dung |
+## Contents
+
+| File | What's in it |
 |---|---|
-| `SKILL.md` | Phần Claude đọc: mô tả khi nào dùng skill, các quy tắc luôn áp dụng, và khi nào mở file tham khảo nào |
-| `references/silent-bugs-checklist.md` | Checklist lỗi ngầm: environment, quyền trong Info.plist, phép toán có thể crash, `String(format:)`, `ForEach` id, bấm lặp, lỗi bị nuốt, vòng đời view, âm thanh, concurrency, điều hướng, locale, thời điểm lúc mở app, **lần đầu dùng bị chậm (kèm cách đo)**, kịch bản thử tay trước khi phát hành |
-| `references/api-caching-guide.md` | Hướng dẫn cache cho API backend: các lớp cache, thiết kế key, những gì không được cache, Cloudflare Cache API, KV / R2 / Redis, cache trên client (RAM, đĩa, `URLCache`, tải trước), chống lạm dụng, cách đo |
+| `SKILL.md` | What Claude reads: when to use the skill, the always-on rules, and which reference to open when |
+| `references/silent-bugs-checklist.md` | Silent-bug checklist: the environment, Info.plist permissions, operations that can crash, `String(format:)`, `ForEach` ids, double taps, swallowed errors, view lifecycle, audio, concurrency, navigation, locale, launch timing, **first-use latency (with how to measure it)**, idle heat and battery drain, manual tests before a release |
+| `references/api-caching-guide.md` | Caching for backend APIs: cache layers, key design, what must never be cached, the Cloudflare Cache API, KV / R2 / Redis, client-side caching (RAM, disk, `URLCache`, prefetching), abuse prevention, measuring |
+| `setup.command` | Installs the skill on a new Mac with a double-click |
 
-Hai file tham khảo viết bằng tiếng Việt và dùng được độc lập, không cần Claude.
+Both references stand on their own and are useful without Claude.
 
-## Cài đặt trên máy mới
+## Install on a new Mac
 
-Skill cấp user nằm ở `~/.claude/skills/<tên-skill>/`, áp dụng cho mọi dự án.
+User-level skills live in `~/.claude/skills/<skill-name>/` and apply to every project.
 
-**Cách 1: clone thẳng vào thư mục skills** (đơn giản nhất)
+**Option 1: double-click**
+
+1. On the repo page on GitHub, choose **Code → Download ZIP** and unzip it.
+2. Right-click `setup.command` → **Open**. The first time, macOS blocks files downloaded from the internet, so use right-click rather than a double-click.
+
+The script:
+- checks for git and opens the Command Line Tools installer if it's missing (double-click the script again once it's done);
+- clones the skill into `~/Desktop/Swift UI projects/rubydai-swift-ui-bonus-skill`, or pulls if it's already there;
+- links it into `~/.claude/skills/rubydai-swift-ui-bonus-skill`;
+- adds the "always use this skill" line to `~/.claude/CLAUDE.md` if it's not there yet.
+
+It's safe to run again at any time; anything already in place is skipped. The list of skills and the clone folder are at the top of the file.
+
+**Option 2: clone directly into the skills folder**
 
 ```sh
 mkdir -p ~/.claude/skills
-git clone <url-repo> ~/.claude/skills/binh-swift-ui-bonus-skill
+git clone https://github.com/rubydai-dev/Rubydai-swift-ui-bonus-skill.git ~/.claude/skills/rubydai-swift-ui-bonus-skill
 ```
 
-Cập nhật về sau: `git -C ~/.claude/skills/binh-swift-ui-bonus-skill pull`.
+Update later with `git -C ~/.claude/skills/rubydai-swift-ui-bonus-skill pull`.
 
-**Cách 2: clone vào chỗ khác rồi tạo symlink** (nếu muốn sửa skill ngay trong thư mục dự án của mình)
+**Option 3: clone elsewhere and symlink** (if you want to edit the skill inside your own projects folder)
 
 ```sh
-git clone <url-repo> "<thư-mục-của-bạn>/binh-swift-ui-bonus-skill"
+git clone https://github.com/rubydai-dev/Rubydai-swift-ui-bonus-skill.git "<your-folder>/rubydai-swift-ui-bonus-skill"
 mkdir -p ~/.claude/skills
-ln -s "<thư-mục-của-bạn>/binh-swift-ui-bonus-skill" ~/.claude/skills/binh-swift-ui-bonus-skill
+ln -s "<your-folder>/rubydai-swift-ui-bonus-skill" ~/.claude/skills/rubydai-swift-ui-bonus-skill
 ```
 
-Mở một phiên Claude Code mới, gõ `/` và kiểm tra `binh-swift-ui-bonus-skill` có trong danh sách skill.
+Start a new Claude Code session, type `/`, and check that `rubydai-swift-ui-bonus-skill` is in the list of skills.
 
-### Muốn Claude luôn dùng skill trong dự án SwiftUI
+### Making Claude always use the skill in SwiftUI projects
 
-Claude tự dùng skill khi thấy việc đang làm khớp với phần `description` trong `SKILL.md`, nhưng không đảm bảo lần nào cũng dùng. Muốn chắc chắn thì thêm vào `~/.claude/CLAUDE.md`:
+Claude uses the skill on its own when the task matches the `description` in `SKILL.md`, but not reliably every time. To make sure, add this line to `~/.claude/CLAUDE.md` (`setup.command` does it for you):
 
 ```md
-- Trong mọi dự án SwiftUI / Xcode, luôn dùng skill `binh-swift-ui-bonus-skill`.
+- In every SwiftUI / Xcode project, always use the `rubydai-swift-ui-bonus-skill` skill.
 ```
 
-## Cập nhật nội dung
+## Updating the content
 
-- Sửa trực tiếp các file trong repo này, rồi commit và push.
-- Nếu một dự án có bản `docs/silent-bugs-checklist.md` hoặc `docs/api-caching-guide.md` mới hơn, copy nó vào `references/` của repo này.
-- Giữ nội dung **chung chung**: không đưa tên class, đường dẫn hay tính năng riêng của một dự án vào đây.
-- Phần `description` trong `SKILL.md` quyết định khi nào Claude dùng skill. Nên giữ dưới 1024 ký tự và liệt kê rõ các tình huống cần kích hoạt.
+- Edit the files in this repo directly, then commit and push.
+- If a project has a newer `docs/silent-bugs-checklist.md` or `docs/api-caching-guide.md`, copy it into this repo's `references/`.
+- Keep it **generic**: no class names, paths or features specific to one project.
+- Write everything in English.
+- The `description` in `SKILL.md` decides when Claude uses the skill. Keep it under 1024 characters and list the situations that should trigger it explicitly.
+- The skill's folder name and the `name` in `SKILL.md` must stay `rubydai-swift-ui-bonus-skill`: lowercase letters, digits and hyphens only.

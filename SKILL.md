@@ -1,11 +1,11 @@
 ---
-name: binh-swift-ui-bonus-skill
+name: rubydai-swift-ui-bonus-skill
 description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — silent bugs that build fine but crash or misbehave at runtime, launch-time timing traps (ATT/permission prompts, modals at launch), first-use latency (slow first sheet, DNS/TLS, first WKWebView, full-screen loaders), phone heating / battery drain while idle (repeatForever backgrounds under blur, timers, looping web views), how to measure it on the simulator, and how to cache the APIs the app calls (client RAM/disk, URLCache, Cloudflare Cache API, KV/R2/Redis). Use whenever working in a SwiftUI or Xcode project — writing, porting or reusing views, adding services/networking/audio/ads/permissions, touching app launch, debugging "it's slow the first time", "the phone gets hot" or "nothing happens when I tap", adding caching to a backend or TTS/AI/API call, or preparing a release — even if the user doesn't ask for a checklist.
 ---
 
 # SwiftUI bonus skill: silent bugs, first-use latency, API caching
 
-"Build succeeded" is not "works". This skill holds the lessons that compilers and quick tests miss. The full guides are in `references/` (written in Vietnamese); read the relevant one before acting, and quote its commands rather than re-deriving them.
+"Build succeeded" is not "works". This skill holds the lessons that compilers and quick tests miss. The full guides are in `references/`; read the relevant one before acting, and quote its commands rather than re-deriving them.
 
 | Situation | Read |
 |---|---|
