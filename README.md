@@ -11,9 +11,10 @@ The skill installs as `rubydai-swift-ui-bonus-skill`.
 | `SKILL.md` | What Claude reads: when to use the skill, the always-on rules, and which reference to open when |
 | `references/silent-bugs-checklist.md` | Silent-bug checklist: the environment, Info.plist permissions, operations that can crash, `String(format:)`, `ForEach` ids, double taps, swallowed errors, view lifecycle, audio, concurrency, navigation, locale, launch timing, **first-use latency (with how to measure it)**, idle heat and battery drain, manual tests before a release |
 | `references/api-caching-guide.md` | Caching for backend APIs: cache layers, key design, what must never be cached, the Cloudflare Cache API, KV / R2 / Redis, client-side caching (RAM, disk, `URLCache`, prefetching), abuse prevention, measuring |
+| `references/admob-guide.md` | AdMob in SwiftUI: SDK and Info.plist setup, test vs real ad units, the ATT prompt at launch (App Review), full-width banners that don't hide list rows, interstitials (preload, frequency cap, top-most presenter, waiting before memory-heavy work), testing on the simulator and a device |
 | `setup.command` | Installs the skill on a new Mac with a double-click |
 
-Both references stand on their own and are useful without Claude.
+The references stand on their own and are useful without Claude.
 
 ## Install on a new Mac
 

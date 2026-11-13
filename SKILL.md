@@ -1,6 +1,6 @@
 ---
 name: rubydai-swift-ui-bonus-skill
-description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — silent bugs that build fine but crash or misbehave at runtime, launch-time timing traps (ATT/permission prompts, modals at launch), first-use latency (slow first sheet, DNS/TLS, first WKWebView, full-screen loaders), phone heating / battery drain while idle (repeatForever backgrounds under blur, timers, looping web views), how to measure it on the simulator, and how to cache the APIs the app calls (client RAM/disk, URLCache, Cloudflare Cache API, KV/R2/Redis). Use whenever working in a SwiftUI or Xcode project — writing, porting or reusing views, adding services/networking/audio/ads/permissions, touching app launch, debugging "it's slow the first time", "the phone gets hot" or "nothing happens when I tap", adding caching to a backend or TTS/AI/API call, or preparing a release — even if the user doesn't ask for a checklist.
+description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — silent bugs that build fine but crash or misbehave at runtime, launch-time timing traps (ATT/permission prompts, modals at launch), first-use latency (slow first sheet, DNS/TLS, first WKWebView, full-screen loaders), phone heating / battery drain while idle (repeatForever backgrounds under blur, timers, looping web views), how to measure it on the simulator, and how to cache the APIs the app calls (client RAM/disk, URLCache, Cloudflare Cache API, KV/R2/Redis). Use whenever working in a SwiftUI or Xcode project — writing, porting or reusing views, adding services/networking/audio/AdMob ads (banners, interstitials, the ATT prompt)/permissions, touching app launch, debugging "it's slow the first time", "the phone gets hot" or "nothing happens when I tap", adding caching to a backend or TTS/AI/API call, or preparing a release — even if the user doesn't ask for a checklist.
 ---
 
 # SwiftUI bonus skill: silent bugs, first-use latency, API caching
@@ -13,6 +13,7 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 | A screen is slow the first time, the app "feels laggy", or you need to measure timing on the simulator | `references/silent-bugs-checklist.md` §13–14 |
 | The phone gets hot or the battery drains, even when the app is idle | `references/silent-bugs-checklist.md` §15 |
 | Adding or reviewing caching for an API, backend, TTS/AI/third-party call, or media downloads | `references/api-caching-guide.md` |
+| Adding AdMob: SDK setup, the ATT prompt, banner size/placement, interstitials, testing ads | `references/admob-guide.md` |
 
 ## Always-on rules (apply without being asked)
 
@@ -23,6 +24,12 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 **Launch flow**
 - System prompts (ATT etc.) are silently ignored unless the app is `.active` — wait for `didBecomeActiveNotification` explicitly; never rely on another step's delay.
 - Don't present your own modal while launch prompts are pending, and don't ask on the very first launch if a system prompt is already showing.
+
+**Ads (AdMob)**
+- Ask ATT right at launch once the app is active (App Review must see it), then start the SDK; no ad loads before the answer.
+- Debug = Google test units, Release = real units; check the Release binary with `strings | grep ca-app-pub-`.
+- Banners: full width with `inlineAdaptiveBanner(width:maxHeight:)` (anchored is deprecated, "large anchored" is ~125 pt), zero height until loaded, never next to frequently tapped buttons. A `UIViewRepresentable` list doesn't see SwiftUI's `safeAreaInset`: pass the banner height as its `contentInset.top`.
+- Interstitials: preload, cap frequency (persisted), present from the top-most view controller, and make memory-heavy work wait until the ad has closed.
 
 **First-use latency** (measure first, then fix in this order)
 1. Never cover data you already have with a full-screen loader; show it and use a small non-blocking indicator.
