@@ -389,3 +389,26 @@ Scenarios where most silent bugs only show up when actually running:
 | **Fresh install**, on 4G, open a key detail screen for the first time | First-use latency (section 14) |
 | Fresh install, launch the app a first and a second time without tapping anything during launch | Ignored permission prompts, modals on top of system dialogs (section 13) |
 | Leave the app idle for a few minutes on the main screens; feel the phone or watch Energy Impact | Something redrawing or running constantly (section 15) |
+
+## 17. Export compliance (encryption) before uploading a build
+
+**Symptom:** every uploaded build sits in App Store Connect / TestFlight as **"Missing Compliance"** and asks about encryption ("App Encryption Documentation"), until someone answers by hand, build after build. This applies to every iOS app (SwiftUI, UIKit, Godot…), not just SwiftUI.
+
+**Fix:** declare it in the app once.
+
+```xml
+<!-- Info.plist -->
+<key>ITSAppUsesNonExemptEncryption</key>
+<false/>
+```
+
+```sh
+plutil -insert ITSAppUsesNonExemptEncryption -bool NO Config/Info.plist   # a project with its own Info.plist
+# a project with GENERATE_INFOPLIST_FILE and no plist file: build setting INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO
+plutil -p <App>.app/Info.plist | grep ITSApp                              # check the built app, not just the source
+```
+
+- **`NO` is right** when the app only uses encryption built into the OS or standard protocols: HTTPS/TLS (URLSession, AdMob, Firebase, any SDK talking HTTPS), Keychain, Data Protection, Sign in with Apple, StoreKit. That is most apps, and no documentation is needed.
+- **Stop and ask the user** when the app ships its own crypto or a third-party crypto library to encrypt content for purposes other than authentication or protecting the user's own data (VPN, self-made end-to-end encrypted chat, proprietary algorithms). Then it is `YES`, App Encryption Documentation may be required, and selling in France can need extra paperwork.
+- Check before saying `NO`: `grep -rnE "import CryptoKit|CommonCrypto|AES\.GCM|ChaChaPoly|SecKeyCreateEncryptedData" --include='*.swift' .` Hits for hashing (SHA256 of a cache key) or Keychain use are still exempt; real encryption of content is the case to ask about.
+- A build already uploaded without the key keeps asking: answer it in App Store Connect (TestFlight → the build → Manage → "None of the algorithms mentioned above"), or simply bump the build number and upload a new build that has the key.

@@ -9,7 +9,7 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 
 | Situation | Read |
 |---|---|
-| Porting/reusing a view, adding a service, touching launch flow, permissions, audio, concurrency, localization, or doing a pre-release pass | `references/silent-bugs-checklist.md` |
+| Porting/reusing a view, adding a service, touching launch flow, permissions, audio, concurrency, localization, or doing a pre-release pass (incl. §17 export compliance before uploading a build) | `references/silent-bugs-checklist.md` |
 | A screen is slow the first time, the app "feels laggy", or you need to measure timing on the simulator | `references/silent-bugs-checklist.md` §13–14 |
 | The phone gets hot or the battery drains, even when the app is idle | `references/silent-bugs-checklist.md` §15 |
 | Adding or reviewing caching for an API, backend, TTS/AI/third-party call, or media downloads | `references/api-caching-guide.md` |
@@ -24,6 +24,9 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 **Launch flow**
 - System prompts (ATT etc.) are silently ignored unless the app is `.active` — wait for `didBecomeActiveNotification` explicitly; never rely on another step's delay.
 - Don't present your own modal while launch prompts are pending, and don't ask on the very first launch if a system prompt is already showing.
+
+**Release**
+- Every app needs `ITSAppUsesNonExemptEncryption` = `NO` in Info.plist (or `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption`) when it only uses HTTPS / Keychain / OS crypto, or each uploaded build shows "Missing Compliance". Ask before writing `NO` if the app ships its own encryption (§17).
 
 **Ads (AdMob)**
 - Ask ATT right at launch once the app is active (App Review must see it), then start the SDK; no ad loads before the answer.
