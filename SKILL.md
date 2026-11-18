@@ -13,7 +13,7 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 | A screen is slow the first time, the app "feels laggy", or you need to measure timing on the simulator | `references/silent-bugs-checklist.md` §13–14 |
 | The phone gets hot or the battery drains, even when the app is idle | `references/silent-bugs-checklist.md` §15 |
 | Adding or reviewing caching for an API, backend, TTS/AI/third-party call, or media downloads | `references/api-caching-guide.md` |
-| Adding AdMob: SDK setup, the ATT prompt, banner size/placement, interstitials, testing ads | `references/admob-guide.md` |
+| Adding AdMob: SDK setup, the ATT prompt, banner size/placement, interstitials, testing ads; or an app for kids (no tracking, parental gate, §6) | `references/admob-guide.md` |
 
 ## Always-on rules (apply without being asked)
 

@@ -84,3 +84,14 @@ Google Mobile Ads SDK 13 (Swift names: `MobileAds`, `BannerView`, `InterstitialA
 - A headless simulator can't tap the prompt. To get past it, add a temporary launch argument (`-skipATT`, marked `// ADS-TMP`) that skips the request, plus another one that calls the interstitial a few seconds after start. Remove them all before finishing and grep for the marker.
 - Log the loaded banner size (`bannerView.adSize`) once to check the real height.
 - On a real device, test: the prompt at a fresh install (delete the app first), both answers, a banner on every screen that has one, an interstitial at each trigger, closing it, and then the memory-heavy action right after.
+
+## 6. Apps for kids (Made for Kids, or mostly used by children)
+
+Apple's rules (guidelines 1.3 and 5.1.4) apply to any app **intended primarily for kids**, in the Kids category or not. Decide this before adding ads, because it changes the whole monetization:
+
+- **No tracking:** no ATT prompt, no `NSUserTrackingUsageDescription`, no IDFA. Third-party ads and analytics are allowed only in limited cases (contextual, human-reviewed, no data about the child). Ad revenue for child-directed traffic is very low, so the usual answer is **no ads at all**: free download with part of the content, plus a one-time non-consumable "Unlock everything" (Family Sharing on, Ask to Buy handled as `.pending`).
+- If ads stay anyway: `MobileAds.shared.requestConfiguration.ageRestrictedTreatment = .child` (SDK 13; replaces `tagForChildDirectedTreatment`) and `maxAdContentRating = .general`, set before `start()`.
+- **Parental gate** in front of every purchase, every restore, every link out of the app (support, privacy, website, "rate the app") and any sign-in. A keypad asking for an adult's year of birth (18–100 years old, Gregorian calendar) is a common, accepted pattern. No automatic `requestReview` prompt.
+- **Privacy:** policy written for children (COPPA, GDPR), App Privacy "Data Not Collected" when true, a `PrivacyInfo.xcprivacy` for the app's own required-reason APIs (e.g. UserDefaults `CA92.1`).
+- The Kids category and its age band (5 and under, 6–8, 9–11) **cannot be changed after the app is published.**
+- Removing AdMob from an app: delete the package from the project (and `Package.resolved`), `GADApplicationIdentifier`, `SKAdNetworkItems`, the tracking usage description (also in `InfoPlist.xcstrings`), then check the Release binary: `strings <App> | grep -c ca-app-pub` must be 0 and `<App>.app/Frameworks` must not hold GoogleMobileAds.
