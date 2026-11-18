@@ -412,3 +412,28 @@ plutil -p <App>.app/Info.plist | grep ITSApp                              # chec
 - **Stop and ask the user** when the app ships its own crypto or a third-party crypto library to encrypt content for purposes other than authentication or protecting the user's own data (VPN, self-made end-to-end encrypted chat, proprietary algorithms). Then it is `YES`, App Encryption Documentation may be required, and selling in France can need extra paperwork.
 - Check before saying `NO`: `grep -rnE "import CryptoKit|CommonCrypto|AES\.GCM|ChaChaPoly|SecKeyCreateEncryptedData" --include='*.swift' .` Hits for hashing (SHA256 of a cache key) or Keychain use are still exempt; real encryption of content is the case to ask about.
 - A build already uploaded without the key keeps asking: answer it in App Store Connect (TestFlight → the build → Manage → "None of the algorithms mentioned above"), or simply bump the build number and upload a new build that has the key.
+
+## 18. Languages listed on the App Store
+
+**Symptom:** the app is fully translated (in-app strings in Swift, a language switch in Settings), but the App Store page lists only one language, e.g. only "Vietnamese", or only "English".
+
+The App Store builds the "Languages" line from the **`.lproj` folders in the main app bundle**, not from your Swift strings and not from frameworks. Apps whose UI text lives in code (a `Strings` struct, an in-app language picker) often ship with few or no `.lproj` folders:
+
+- `InfoPlist.xcstrings` (or a String Catalog) where the **development language has `"state" : "new"`** and the same values as Info.plist: Xcode emits `vi.lproj` but **no `en.lproj`**, so English is missing from the store.
+- No catalog at all: no `.lproj`, and the store may show only the development region.
+
+**Fix:**
+
+1. Declare the languages in Info.plist: `CFBundleLocalizations` = `["en", "vi", …]`
+   (`plutil -insert CFBundleLocalizations -json '["en","vi"]' Config/Info.plist`).
+2. Make sure every language has a `.lproj` in the build: give each language, the development one included, a translated entry in `InfoPlist.xcstrings` (at least `CFBundleDisplayName` and every `NS…UsageDescription`), with `"state" : "translated"`.
+3. Keep `knownRegions` in the project in line with the list.
+
+**Check the built app, not the source:**
+
+```sh
+ls -d "<App>.app"/*.lproj                                  # one folder per supported language
+plutil -p "<App>.app/Info.plist" | grep -A5 CFBundleLocalizations
+```
+
+Also add the matching localizations of the listing (name, subtitle, description, keywords, screenshots) in App Store Connect; that is separate from what the binary declares.
