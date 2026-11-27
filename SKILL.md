@@ -31,7 +31,8 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 
 **Ads (AdMob)**
 - Ask ATT right at launch once the app is active (App Review must see it), then start the SDK; no ad loads before the answer.
-- Debug = Google test units, Release = real units; check the Release binary with `strings | grep ca-app-pub-`.
+- Debug = Google test units, Release = real units, chosen by the build configuration (`#if DEBUG`), never by a flag someone must remember. Add a Release-only Run Script build phase that **fails the Archive** when the built app still holds test units or the test App ID (`references/admob-guide.md` §1.1); a wrapper app (Capacitor, WebView, React Native) checks the bundled JS instead.
+- AdMob "Test devices" on iOS match by IDFA, so they work only after tapping **Allow** on the ATT prompt; check for the "Test mode" label before tapping any ad.
 - Banners: full width with `inlineAdaptiveBanner(width:maxHeight:)` (anchored is deprecated, "large anchored" is ~125 pt), zero height until loaded, never next to frequently tapped buttons. A `UIViewRepresentable` list doesn't see SwiftUI's `safeAreaInset`: pass the banner height as its `contentInset.top`.
 - Interstitials: preload, cap frequency (persisted), present from the top-most view controller, and make memory-heavy work wait until the ad has closed.
 

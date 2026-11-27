@@ -26,6 +26,30 @@ Google Mobile Ads SDK 13 (Swift names: `MobileAds`, `BannerView`, `InterstitialA
 
   Tapping your own real ads while developing can get the AdMob account flagged. After a Release build, confirm that the binary holds only the real units:
   `strings "<App>.app/<App>" | grep ca-app-pub- | sort -u`.
+### 1.1 Make an Archive with test ads impossible
+
+A build that ships Google's test units uploads and passes App Review without a single warning, then earns nothing (test ads pay $0, and AdMob shows almost no impressions for the app). Don't rely on remembering a command: let Xcode refuse it.
+
+- **Choose the units by build configuration**, as above (`#if DEBUG`). Never by an environment variable or a script argument that someone has to remember before archiving.
+- **Add a Run Script build phase** to the app target, placed last (after "Embed Frameworks"), named "Check AdMob ad units (Release)". Uncheck "Based on dependency analysis". With `ENABLE_USER_SCRIPT_SANDBOXING = YES` (the default for new projects), list `$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)` and `$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)` under Input Files, or the script can't read them:
+
+  ```sh
+  [ "$CONFIGURATION" = "Release" ] || exit 0
+  bin="$TARGET_BUILD_DIR/$EXECUTABLE_PATH"
+  plist="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+  fail() { echo "error: AdMob: $1"; exit 1; }
+  # Google's test publisher is 3940256099942544 (test units and the test App ID).
+  strings -a "$bin" | grep -q 'ca-app-pub-3940256099942544' && fail "the Release binary contains Google's TEST ad units."
+  strings -a "$bin" | grep -Eq 'ca-app-pub-[0-9]{16}/[0-9]+' || fail "no real ad unit ID in the Release binary."
+  app_id=$(/usr/libexec/PlistBuddy -c 'Print :GADApplicationIdentifier' "$plist" 2>/dev/null)
+  case "$app_id" in ca-app-pub-3940256099942544*|"") fail "GADApplicationIdentifier is missing or Google's test App ID." ;; esac
+  echo "AdMob: Release build uses real ad units."
+  ```
+
+  Lines starting with `error:` show up as build errors in Xcode. The Google Mobile Ads SDK itself contains no test IDs (checked on SDK 12–13: only ID-format regexes), so the binary check gives no false alarms.
+- **Wrapper apps (Capacitor, Cordova, a WKWebView bundle, React Native):** the ad unit IDs live in the bundled JS, not the Swift binary, and the Release Xcode configuration doesn't rebuild that bundle: whatever web build was last synced into the project gets archived. Pick the units at JS build time, and have the build phase check the synced bundle (e.g. `App/public/assets/*.js`). If the JS keeps the test IDs as constants and switches with a flag, the test IDs are in every bundle, so check the **flag** (e.g. the inlined `VITE_ADMOB_RELEASE:"true"`), not the absence of test IDs. Test both directions once: archive after the test build must fail, after the release build must succeed. Worked example: the Capacitor app 履歴書 Instant, `ios/App/check-admob-release.sh`.
+- **Check the archive you uploaded** if in doubt: `strings -a <App>.xcarchive/Products/Applications/<App>.app/<App> | grep ca-app-pub- | sort -u` (for a wrapper app, grep its `public/` folder instead).
+
 - **app-ads.txt** on the developer website (the domain set as the app's Marketing/Support URL): `google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0`. The publisher ID is per AdMob account, so apps of the same account share it.
 - **UMP (Google's GDPR consent form):** optional. If the owner accepts limited, non-personalized ads in the EEA/UK/Switzerland, skip it entirely, and say so in the privacy policy.
 
@@ -83,6 +107,7 @@ Google Mobile Ads SDK 13 (Swift names: `MobileAds`, `BannerView`, `InterstitialA
 - On the simulator, killing the app while the ATT prompt is open leaves the dialog **lingering** on the next launches, even when that launch never asked. Read the log (`[ATTrackingManager] requestTrackingAuthorization…`) rather than trusting a screenshot. Reboot the simulator (`simctl shutdown` + `boot`) to clear it.
 - A headless simulator can't tap the prompt. To get past it, add a temporary launch argument (`-skipATT`, marked `// ADS-TMP`) that skips the request, plus another one that calls the interstitial a few seconds after start. Remove them all before finishing and grep for the marker.
 - Log the loaded banner size (`bannerView.adSize`) once to check the real height.
+- **Real units on your own device:** add the device in AdMob → Settings → Test devices. On iOS the match is by IDFA, which exists only after tapping **Allow** on the ATT prompt (denied, or reinstalled and denied, the IDFA is all zeros and the device gets real ads). The ad must carry a "Test mode" label; without it, don't tap. Devices not registered (a second iPad, a friend's phone, TestFlight testers) always get real ads from Release/TestFlight builds. Keep Debug builds on Google's test units anyway: they're safe on every device and don't mix your own requests into the AdMob reports.
 - On a real device, test: the prompt at a fresh install (delete the app first), both answers, a banner on every screen that has one, an interstitial at each trigger, closing it, and then the memory-heavy action right after.
 
 ## 6. Apps for kids (Made for Kids, or mostly used by children)
