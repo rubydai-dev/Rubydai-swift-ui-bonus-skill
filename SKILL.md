@@ -21,6 +21,9 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 - Build for the simulator and read the *warnings* of the touched files (§0): in Swift 5 mode with `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, isolation bugs are only warnings.
 - Check runtime contracts, not just compilation: environment injection on every entry path, `NS…UsageDescription` keys, `AVAudioSession` category before each play, double-tap re-entrancy, errors surfaced to the UI.
 
+**UI text**
+- Keep on-screen copy short: labels of a few words, hints and footers one short sentence, no explanations of how things work behind the scenes. Write the action or the fact, not the reasons; a confirmation says what is lost and "This can't be undone", nothing more. Long explanations belong in a help page, never on the screen. Shorten every locale together.
+
 **Launch flow**
 - System prompts (ATT etc.) are silently ignored unless the app is `.active` — wait for `didBecomeActiveNotification` explicitly; never rely on another step's delay.
 - Don't present your own modal while launch prompts are pending, and don't ask on the very first launch if a system prompt is already showing.
