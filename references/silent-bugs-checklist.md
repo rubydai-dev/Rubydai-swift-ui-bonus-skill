@@ -437,3 +437,14 @@ plutil -p "<App>.app/Info.plist" | grep -A5 CFBundleLocalizations
 ```
 
 Also add the matching localizations of the listing (name, subtitle, description, keywords, screenshots) in App Store Connect; that is separate from what the binary declares.
+
+## 19. App Store keywords (ASO)
+
+The name, subtitle and keyword field (100 characters per locale) are what App Store search matches; the description is not indexed on iOS.
+
+- **Every keyword names a main feature, the job the user does with it, the kind of user, or the domain's own vocabulary.** For a real-estate flyer app: 販売図面, 間取り図, 大家, 仲介, 空室, 入居者募集, マンション, 土地… Not 翻訳, PDF, SNS, 画像, エクセル, コンビニ印刷: the app does those things, but people searching them want a translator or a PDF tool, the term is dominated by huge apps, and it adds nothing to relevance for the real searches.
+- Spend the name on the strongest domain terms (Apple weights it most), the subtitle on the next ones, the keyword field on the rest. Apple combines words across the three fields, so never repeat a word, and keep plural / variant forms out.
+- Commas, no spaces after them. In Japanese the separators are what split the words; in languages where one word means both "listing" and "advertisement" (Indonesian iklan, Bengali বিজ্ঞাপন, Urdu اشتہار), say "ads" with another word in the description.
+- A storefront indexes a second locale too (Japan: Japanese + English (U.S.)); use the English field for romaji / English terms the same users type.
+- Leave prices, storage numbers and other values that change out of the description and subtitle; the price shows in the In-App Purchases section on its own.
+

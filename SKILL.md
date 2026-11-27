@@ -32,6 +32,8 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 - A multilingual app must ship one `.lproj` per language plus `CFBundleLocalizations`, or the App Store lists only some of its languages (§18). Check `ls <App>.app/*.lproj` on the built app.
 - Every app needs `ITSAppUsesNonExemptEncryption` = `NO` in Info.plist (or `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption`) when it only uses HTTPS / Keychain / OS crypto, or each uploaded build shows "Missing Compliance". Ask before writing `NO` if the app ships its own encryption (§17).
 
+- App Store keywords (100 characters, per locale): only terms tied directly to the app's main features and the people who use them, the words they would type to find this kind of app (§19). No generic or loosely related words (translate, PDF, SNS, image…) even when the app touches them: they compete with huge apps and dilute relevance. Never repeat a word already in the name or subtitle.
+
 **Ads (AdMob)**
 - Ask ATT right at launch once the app is active (App Review must see it), then start the SDK; no ad loads before the answer.
 - Debug = Google test units, Release = real units, chosen by the build configuration (`#if DEBUG`), never by a flag someone must remember. Add a Release-only Run Script build phase that **fails the Archive** when the built app still holds test units or the test App ID (`references/admob-guide.md` §1.1); a wrapper app (Capacitor, WebView, React Native) asks the native side for `#if DEBUG` through a plugin to pick the units, and the build phase checks the bundled JS for the real units (and no local API) instead.
