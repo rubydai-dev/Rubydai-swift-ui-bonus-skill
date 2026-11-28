@@ -1,6 +1,6 @@
 ---
 name: rubydai-swift-ui-bonus-skill
-description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — silent bugs that build fine but crash or misbehave at runtime, launch-time timing traps (ATT/permission prompts, modals at launch), first-use latency (slow first sheet, DNS/TLS, first WKWebView, full-screen loaders), phone heating / battery drain while idle (repeatForever backgrounds under blur, timers, looping web views), how to measure it on the simulator, and how to cache the APIs the app calls (client RAM/disk, URLCache, Cloudflare Cache API, KV/R2/Redis). Use whenever working in a SwiftUI or Xcode project — writing, porting or reusing views, adding services/networking/audio/AdMob ads (banners, interstitials, the ATT prompt)/permissions, touching app launch, debugging "it's slow the first time", "the phone gets hot" or "nothing happens when I tap", adding caching to a backend or TTS/AI/API call, or preparing a release — even if the user doesn't ask for a checklist.
+description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — silent bugs that build fine but crash or misbehave at runtime, launch-time timing traps (ATT/permission prompts, modals at launch), first-use latency (slow first sheet, DNS/TLS, first WKWebView, full-screen loaders), phone heating / battery drain while idle (repeatForever backgrounds under blur, timers, looping web views), how to measure it on the simulator, and how to cache the APIs the app calls (client RAM/disk, URLCache, Cloudflare Cache API, KV/R2/Redis). Use whenever working in a SwiftUI or Xcode project — writing, porting or reusing views, adding services/networking/audio/AdMob ads (banners, interstitials, the ATT prompt)/permissions, touching app launch, debugging "it's slow the first time", "the phone gets hot" or "nothing happens when I tap", adding caching to a backend or TTS/AI/API call, or preparing a release or an App Review submission (review Notes, screen recording) — even if the user doesn't ask for a checklist.
 ---
 
 # SwiftUI bonus skill: silent bugs, first-use latency, API caching
@@ -9,7 +9,7 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 
 | Situation | Read |
 |---|---|
-| Porting/reusing a view, adding a service, touching launch flow, permissions, audio, concurrency, localization, or doing a pre-release pass (incl. §17 export compliance and §18 App Store languages before uploading a build) | `references/silent-bugs-checklist.md` |
+| Porting/reusing a view, adding a service, touching launch flow, permissions, audio, concurrency, localization, or doing a pre-release pass (incl. §17 export compliance and §18 App Store languages before uploading a build, §20 App Review Notes + screen recording before submitting a new app) | `references/silent-bugs-checklist.md` |
 | A screen is slow the first time, the app "feels laggy", or you need to measure timing on the simulator | `references/silent-bugs-checklist.md` §13–14 |
 | The phone gets hot or the battery drains, even when the app is idle | `references/silent-bugs-checklist.md` §15 |
 | Adding or reviewing caching for an API, backend, TTS/AI/third-party call, or media downloads | `references/api-caching-guide.md` |
@@ -33,6 +33,8 @@ description: Hard-won runtime checklist for any SwiftUI / iOS Swift app — sile
 - Every app needs `ITSAppUsesNonExemptEncryption` = `NO` in Info.plist (or `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption`) when it only uses HTTPS / Keychain / OS crypto, or each uploaded build shows "Missing Compliance". Ask before writing `NO` if the app ships its own encryption (§17).
 
 - App Store keywords (100 characters, per locale): only terms tied directly to the app's main features and the people who use them, the words they would type to find this kind of app (§19). No generic or loosely related words (translate, PDF, SNS, image…) even when the app touches them: they compete with huge apps and dilute relevance. Never repeat a word already in the name or subtitle.
+
+- **New app → App Review:** before the first submission, remind the user to add the Notes (purpose, how to use, external services, regions, regulated industry) and a screen recording made on a physical iPhone, starting at launch and showing purchase / account deletion (§20). Apple asks for them, and a review round is lost without them.
 
 **Ads (AdMob)**
 - Ask ATT right at launch once the app is active (App Review must see it), then start the SDK; no ad loads before the answer.

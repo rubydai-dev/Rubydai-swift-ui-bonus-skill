@@ -448,3 +448,38 @@ The name, subtitle and keyword field (100 characters per locale) are what App St
 - A storefront indexes a second locale too (Japan: Japanese + English (U.S.)); use the English field for romaji / English terms the same users type.
 - Leave prices, storage numbers and other values that change out of the description and subtitle; the price shows in the In-App Purchases section on its own.
 
+
+## 20. App Review Notes and screen recording (new app submissions)
+
+**Symptom:** a new app sits in review, then Apple writes "We need additional information to better understand the app and complete the review" and asks for a screen recording plus six answers in the Notes field. One review round is lost.
+
+Since 2026 Apple asks this for new apps. **Before the first submission of every new app, remind the user and prepare it with them:**
+
+1. **Screen recording on a physical iPhone** (TestFlight build, latest iOS, Control Center → Screen Recording). It must **start at app launch** and show the typical flow, plus, if the app has them: account registration / login / **account deletion**, user-generated content with its **report and block** mechanisms, and **paid content** (buy the subscription with Sandbox in TestFlight). Set the device language to English so the screen matches the labels quoted in the Notes. Upload it in App Review Information → **Attachment** (or put an unlisted link at the top of the Notes).
+2. **Notes** (App Review Information, ≤ 4,000 characters), short, English UI labels in quotes:
+
+```
+1. SCREEN RECORDING
+Attached (recorded on a physical iPhone, TestFlight build 1.0 (N)) demonstrating the app's functionality, including <purchase / account deletion>.
+
+2. PURPOSE AND AUDIENCE
+<who it is for, the problem it solves, 1–2 sentences>.
+
+3. HOW TO USE
+<login credentials for a demo account, or "No login or demo account needed".>
+- <main flow, 2–4 steps with the exact English button names>
+- Subscription: <where>.
+- Account / data deletion: <where>.
+
+4. EXTERNAL SERVICES
+- <backend / data providers, payments (StoreKit), translation, AI…>
+No <AI, ads, tracking, third-party login> (only what is true).
+
+5. REGIONAL DIFFERENCES
+The app works the same in all regions. (or list the differences)
+
+6. REGULATED INDUSTRY
+<license / documents, or why none is needed; rights to third-party material>.
+```
+
+Also before submitting: In-App Purchases attached to the version and ready, screenshots that show the real app in use (not title art or a login screen), demo credentials still valid.
